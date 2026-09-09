@@ -1,0 +1,49 @@
+listen: "127.0.0.1:8443"
+
+tls:
+  cert: certs/server.crt
+  key: certs/server.key
+  ca: certs/ca.crt
+
+allowed_clients:
+  - ci-bot
+
+limits:
+  request_body_bytes: 65536
+  output_bytes: 1048576
+  default_timeout: 30
+  rate_per_minute: 60
+
+workloads:
+  - name: echo
+    command: ["cmd.exe", "/c", "echo", "{message}"]
+    params:
+      - name: message
+        required: true
+        pattern: "^[a-zA-Z0-9 ._-]+$"
+    timeout: 5
+
+  - name: disk_usage
+    command: ["powershell", "-NoProfile", "-Command", "Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize"]
+    timeout: 10
+
+  - name: slow_task
+    command: ["timeout.exe", "/t", "10", "/nobreak"]
+    timeout: 2
+
+  - name: restricted
+    command: ["cmd.exe", "/c", "echo", "restricted endpoint"]
+    allowed_clients:
+      - deploy-worker
+    timeout: 5
+
+  - name: chef_client
+    command: ["chef-client", "-o", "recipe[{recipe}]"]
+    params:
+      - name: recipe
+        required: true
+        pattern: "^[a-zA-Z0-9_:-]+$"
+    allowed_clients:
+      - deploy-worker
+    timeout: 1800
+    cwd: C:\chef

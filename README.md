@@ -6,6 +6,8 @@ signed by your trusted CA can connect.
 
 ## Quick start
 
+**Linux / macOS:**
+
 ```sh
 # 1. Generate dev CA + server + client certs
 ./certs/generate.sh
@@ -16,6 +18,20 @@ cp config.example.yml config.yml
 # 3. Build and run
 crystal build src/main.cr -o bin/command_runner
 ./bin/command_runner --config config.yml
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# 1. Generate dev CA + server + client certs (requires OpenSSL in PATH)
+.\certs\generate.ps1
+
+# 2. Copy and edit config
+Copy-Item config.example.windows.yml config.yml
+
+# 3. Build and run
+crystal build src/main.cr -o bin\command_runner.exe
+.\bin\command_runner.exe --config config.yml
 ```
 
 ## API
@@ -58,7 +74,9 @@ curl --cacert certs/ca.crt \
 
 ## Configuration
 
-See `config.example.yml` for all options.
+See `config.example.yml` (Linux/macOS) or `config.example.windows.yml` (Windows)
+for all options. Workload commands differ per platform — use the appropriate
+example as a starting point.
 
 ## systemd service
 
@@ -139,3 +157,72 @@ sudo journalctl -u command_runner -f
 > **Note**: `ProtectSystem=strict` makes the filesystem read-only except for
 > paths listed in `ReadWritePaths`. If your workloads need to write to other
 > directories (e.g. `/var/chef`), add them to `ReadWritePaths`.
+
+## Windows service
+
+Run `command_runner` as a Windows service using [NSSM](https://nssm.cc/)
+(Non-Sucking Service Manager). The service account needs read access to the
+server cert/key and CA cert. On Windows, `chef-client` runs as a scheduled
+task or service — no `sudo` equivalent is needed.
+
+### 1. Install NSSM
+
+```powershell
+choco install nssm
+```
+
+### 2. Install the binary and config
+
+```powershell
+$InstallDir = "C:\Program Files\command_runner"
+New-Item -ItemType Directory -Force -Path $InstallDir
+Copy-Item bin\command_runner.exe $InstallDir\
+Copy-Item config.yml $InstallDir\
+New-Item -ItemType Directory -Force -Path "$InstallDir\certs"
+Copy-Item certs\server.crt, certs\server.key, certs\ca.crt "$InstallDir\certs\"
+```
+
+### 3. Create the service account
+
+```powershell
+# Create a standard user (or use an existing service account)
+net user command_runner "StrongPassword!" /add
+# Grant "Log on as a service" right via Group Policy or:
+ntrights +r SeServiceLogonRight -u command_runner
+```
+
+### 4. Register and start the service
+
+```powershell
+nssm install command_runner "$InstallDir\command_runner.exe"
+nssm set command_runner AppParameters "--config `"$InstallDir\config.yml`""
+nssm set command_runner AppDirectory $InstallDir
+nssm set command_runner AppStdout "$InstallDir\logs\stdout.log"
+nssm set command_runner AppStderr "$InstallDir\logs\stderr.log"
+nssm set command_runner AppRotateFiles 1
+nssm set command_runner AppRotateBytes 10485760
+nssm set command_runner AppExit Default Restart
+nssm set command_runner AppRestartDelay 5000
+
+# Set the service to run as the service account
+nssm set command_runner ObjectName ".\command_runner" "StrongPassword!"
+
+# Start
+nssm start command_runner
+```
+
+### 5. Manage the service
+
+```powershell
+nssm status command_runner      # check status
+nssm restart command_runner     # restart
+nssm stop command_runner        # stop
+nssm remove command_runner      # uninstall
+Get-Content "$InstallDir\logs\stdout.log" -Tail 20 -Wait  # tail logs
+```
+
+> **Note**: Ensure the service account has read access to the cert files in
+> `$InstallDir\certs\`. Use `icacls` to grant access:
+> ```powershell
+> icacls "$InstallDir\certs\server.key" /grant command_runner:R
+> ```

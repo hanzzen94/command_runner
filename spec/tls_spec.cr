@@ -7,11 +7,11 @@ describe CommandRunner::TLS do
     Dir.mkdir(dir)
 
     begin
-      system("openssl genrsa -out #{dir}/ca.key 2048 2>/dev/null")
-      system("openssl req -x509 -new -nodes -key #{dir}/ca.key -sha256 -days 1 -subj /CN=test-ca -out #{dir}/ca.crt")
-      system("openssl genrsa -out #{dir}/server.key 2048 2>/dev/null")
-      system("openssl req -new -key #{dir}/server.key -subj /CN=localhost -out #{dir}/server.csr")
-      system("openssl x509 -req -in #{dir}/server.csr -CA #{dir}/ca.crt -CAkey #{dir}/ca.key -CAcreateserial -out #{dir}/server.crt -days 1 -sha256 2>/dev/null")
+      run_openssl(dir, "genrsa", "-out", "ca.key", "2048")
+      run_openssl(dir, "req", "-x509", "-new", "-nodes", "-key", "ca.key", "-sha256", "-days", "1", "-subj", "/CN=test-ca", "-out", "ca.crt")
+      run_openssl(dir, "genrsa", "-out", "server.key", "2048")
+      run_openssl(dir, "req", "-new", "-key", "server.key", "-subj", "/CN=localhost", "-out", "server.csr")
+      run_openssl(dir, "x509", "-req", "-in", "server.csr", "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial", "-out", "server.crt", "-days", "1", "-sha256")
 
       config = Config::TLSConfig.from_yaml({"cert" => "#{dir}/server.crt", "key" => "#{dir}/server.key", "ca" => "#{dir}/ca.crt"}.to_yaml)
       context = TLS.build_context(config)
@@ -20,7 +20,7 @@ describe CommandRunner::TLS do
       context.verify_mode.includes?(OpenSSL::SSL::VerifyMode::FAIL_IF_NO_PEER_CERT).should be_true
       context.security_level.should eq(2)
     ensure
-      `rm -rf #{dir}`
+      recursive_delete(dir)
     end
   end
 
@@ -31,4 +31,21 @@ describe CommandRunner::TLS do
       TLS.build_context(config)
     end
   end
+end
+
+private def run_openssl(dir : String, *args : String) : Nil
+  Process.new("openssl", args.to_a, output: Process::Redirect::Close, error: Process::Redirect::Close, chdir: dir).wait
+end
+
+private def recursive_delete(path : String) : Nil
+  return unless Dir.exists?(path)
+  Dir.each_child(path) do |entry|
+    full = File.join(path, entry)
+    if Dir.exists?(full) && !File.symlink?(full)
+      recursive_delete(full)
+    else
+      File.delete(full)
+    end
+  end
+  Dir.delete(path)
 end

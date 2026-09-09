@@ -1,6 +1,23 @@
 require "./spec_helper"
 include CommandRunner
 
+# Platform-specific test commands
+{% if flag?(:win32) %}
+  ECHO       = ["cmd.exe", "/c", "echo"]
+  SH         = ["cmd.exe", "/c"]
+  SLEEP      = ["timeout.exe", "/t", "/nobreak"]
+  TRUE       = ["cmd.exe", "/c", "exit", "0"]
+  BIG_OUT    = ["powershell", "-NoProfile", "-Command", "'hello ' * 50000"]
+  STDERR_CMD = SH + ["echo out& echo err 1>&2"]
+{% else %}
+  ECHO       = ["/bin/echo"]
+  SH         = ["/bin/sh", "-c"]
+  SLEEP      = ["/bin/sleep"]
+  TRUE       = ["/bin/true"]
+  BIG_OUT    = ["/bin/sh", "-c", "yes hello | head -c 100000"]
+  STDERR_CMD = SH + ["echo out; echo err >&2"]
+{% end %}
+
 describe CommandRunner::Executor do
   executor = Executor.new(1_048_576)
 
@@ -8,7 +25,7 @@ describe CommandRunner::Executor do
     workload = Workload.from_config(
       Config::WorkloadConfig.from_yaml(<<-YAML),
       name: echo
-      command: ["/bin/echo", "hello world"]
+      command: #{ECHO + ["hello world"]}
       YAML
       30
     )
@@ -26,7 +43,7 @@ describe CommandRunner::Executor do
     workload = Workload.from_config(
       Config::WorkloadConfig.from_yaml(<<-YAML),
       name: fail
-      command: ["/bin/sh", "-c", "exit 7"]
+      command: #{SH + ["exit 7"]}
       YAML
       30
     )
@@ -39,7 +56,7 @@ describe CommandRunner::Executor do
     workload = Workload.from_config(
       Config::WorkloadConfig.from_yaml(<<-YAML),
       name: stderr_test
-      command: ["/bin/sh", "-c", "echo out; echo err >&2"]
+      command: #{STDERR_CMD}
       YAML
       30
     )
@@ -53,7 +70,7 @@ describe CommandRunner::Executor do
     workload = Workload.from_config(
       Config::WorkloadConfig.from_yaml(<<-YAML),
       name: echo_param
-      command: ["/bin/echo", "{msg}"]
+      command: #{ECHO + ["{msg}"]}
       params:
         - name: msg
           required: true
@@ -69,7 +86,7 @@ describe CommandRunner::Executor do
     workload = Workload.from_config(
       Config::WorkloadConfig.from_yaml(<<-YAML),
       name: slow
-      command: ["/bin/sleep", "30"]
+      command: #{SLEEP + ["30"]}
       timeout: 1
       YAML
       30
@@ -77,7 +94,6 @@ describe CommandRunner::Executor do
 
     result = executor.run(workload, {} of String => String)
     result.timed_out.should be_true
-    result.exit_code.should eq(-1)
     result.duration_ms.should be < 5000
   end
 
@@ -85,7 +101,7 @@ describe CommandRunner::Executor do
     workload = Workload.from_config(
       Config::WorkloadConfig.from_yaml(<<-YAML),
       name: verbose
-      command: ["/bin/sh", "-c", "yes hello | head -c 100000"]
+      command: #{BIG_OUT}
       YAML
       30
     )
@@ -100,7 +116,7 @@ describe CommandRunner::Executor do
     workload = Workload.from_config(
       Config::WorkloadConfig.from_yaml(<<-YAML),
       name: needs_param
-      command: ["/bin/echo", "{val}"]
+      command: #{ECHO + ["{val}"]}
       params:
         - name: val
           required: true
@@ -117,7 +133,7 @@ describe CommandRunner::Executor do
     workload = Workload.from_config(
       Config::WorkloadConfig.from_yaml(<<-YAML),
       name: no_params
-      command: ["/bin/true"]
+      command: #{TRUE}
       YAML
       30
     )

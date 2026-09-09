@@ -54,12 +54,8 @@ module CommandRunner
     Log.info { "command_runner #{VERSION} listening on https://#{address} (mTLS enforced)" }
     Log.info { "#{registry.size} workloads registered, #{config.allowed_clients.size} clients allowed" }
 
-    Signal::INT.trap do
-      Log.info { "shutting down..." }
-      server.close
-    end
-    Signal::TERM.trap do
-      Log.info { "shutting down..." }
+    Process.on_terminate do |reason|
+      Log.info { "shutting down... (#{reason})" }
       server.close
     end
 

@@ -10,9 +10,9 @@ module CommandRunner
     getter stderr : String
     getter truncated : Bool
     getter timed_out : Bool
-    getter duration_ms : Int64
+    getter duration_us : Int64
 
-    def initialize(@exit_code, @stdout, @stderr, @truncated, @timed_out, @duration_ms)
+    def initialize(@exit_code, @stdout, @stderr, @truncated, @timed_out, @duration_us)
     end
   end
 
@@ -51,7 +51,7 @@ module CommandRunner
         s
       when timeout(workload.timeout.seconds)
         begin
-          process.signal(Signal::TERM)
+          process.terminate(graceful: true)
         rescue
         end
         timed_out = true
@@ -61,7 +61,7 @@ module CommandRunner
       stdout_truncated = stdout_done.receive
       stderr_truncated = stderr_done.receive
 
-      duration = (Time.instant - start).total_milliseconds.to_i64
+      duration = (Time.instant - start).total_microseconds.to_i64
 
       ExecutionResult.new(
         exit_code: status.exit_code? || -1,
@@ -69,7 +69,7 @@ module CommandRunner
         stderr: stderr_buf.to_s,
         truncated: stdout_truncated || stderr_truncated,
         timed_out: timed_out,
-        duration_ms: duration,
+        duration_us: duration,
       )
     end
 
