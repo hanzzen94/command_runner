@@ -56,7 +56,7 @@ module CommandRunner
       def call(context : HTTP::Server::Context) : Nil
         start = Time.instant
         call_next(context)
-        duration = (Time.instant - start).total_milliseconds.to_i64
+        duration = (Time.instant - start).total_microseconds.to_i64
 
         cn = context.client_cn || "unknown"
         Log.info do
