@@ -1,0 +1,10 @@
+/docs/
+/lib/
+/bin/
+/.shards/
+*.dwarf
+
+config.yml
+certs/*.key
+certs/*.crt
+certs/*.srl

@@ -1,0 +1,13 @@
+name: command_runner
+version: 0.1.0
+
+authors:
+  - Håvard Lauve Hansen <havard.hansen@posteo.net>
+
+targets:
+  command_runner:
+    main: src/main.cr
+
+crystal: '>= 1.21.0'
+
+license: MIT
