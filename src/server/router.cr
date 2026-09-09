@@ -6,6 +6,7 @@ module CommandRunner
   struct TaskRequest
     include JSON::Serializable
 
+    getter agent_id : String
     getter workload : String
     getter params : Hash(String, String) = {} of String => String
   end
@@ -52,7 +53,7 @@ module CommandRunner
       end
 
       cn = context.client_cn || "unknown"
-      task = Task.new(request.workload, request.params, cn)
+      task = Task.new(request.agent_id, request.workload, request.params, cn)
 
       published = @amqp.publish_task(task)
 
@@ -67,7 +68,7 @@ module CommandRunner
 
       receipt = TaskReceipt.new(task.task_id, "queued")
 
-      Log.info { "task submitted: #{task.task_id} workload=#{task.workload} by=#{cn}" }
+      Log.info { "task submitted: #{task.task_id} agent=#{task.agent_id} workload=#{task.workload} by=#{cn}" }
 
       context.response.status_code = 201
       context.response.content_type = "application/json"

@@ -4,11 +4,12 @@ include CommandRunner
 
 describe CommandRunner::Task do
   it "serializes and deserializes round-trip" do
-    task = Task.new("echo", {"msg" => "hello"}, "ci-bot")
+    task = Task.new("server-01", "echo", {"msg" => "hello"}, "ci-bot")
     json = task.to_json
 
     restored = Task.from_json(json)
     restored.task_id.should eq(task.task_id)
+    restored.agent_id.should eq("server-01")
     restored.workload.should eq("echo")
     restored.params.should eq({"msg" => "hello"})
     restored.submitted_by.should eq("ci-bot")
@@ -16,13 +17,13 @@ describe CommandRunner::Task do
   end
 
   it "generates a unique task_id" do
-    t1 = Task.new("echo", {} of String => String)
-    t2 = Task.new("echo", {} of String => String)
+    t1 = Task.new("server-01", "echo", {} of String => String)
+    t2 = Task.new("server-01", "echo", {} of String => String)
     t1.task_id.should_not eq(t2.task_id)
   end
 
   it "defaults params to empty hash" do
-    task = Task.new("disk_usage")
+    task = Task.new("server-01", "disk_usage")
     task.params.should be_empty
     task.submitted_by.should eq("")
   end

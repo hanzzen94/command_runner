@@ -6,12 +6,13 @@ module CommandRunner
     include JSON::Serializable
 
     getter task_id : String = UUID.v4.to_s
+    getter agent_id : String
     getter workload : String
     getter params : Hash(String, String) = {} of String => String
     getter submitted_at : String = Time.utc.to_rfc3339
     getter submitted_by : String = ""
 
-    def initialize(@workload : String, @params : Hash(String, String) = {} of String => String, @submitted_by : String = "")
+    def initialize(@agent_id : String, @workload : String, @params : Hash(String, String) = {} of String => String, @submitted_by : String = "")
     end
   end
 

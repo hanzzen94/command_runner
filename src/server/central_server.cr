@@ -23,6 +23,7 @@ module CommandRunner
       @db.exec <<-SQL
         CREATE TABLE IF NOT EXISTS tasks (
           task_id      TEXT PRIMARY KEY,
+          agent_id     TEXT NOT NULL,
           workload     TEXT NOT NULL,
           params       JSONB NOT NULL DEFAULT '{}',
           submitted_at TIMESTAMPTZ NOT NULL,
@@ -30,6 +31,8 @@ module CommandRunner
           status       TEXT NOT NULL DEFAULT 'queued'
         )
       SQL
+
+      @db.exec "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS agent_id TEXT NOT NULL DEFAULT ''"
 
       @db.exec <<-SQL
         CREATE TABLE IF NOT EXISTS task_results (
@@ -51,8 +54,8 @@ module CommandRunner
 
     def store_task(task : Task) : Nil
       @db.exec(
-        "INSERT INTO tasks (task_id, workload, params, submitted_at, submitted_by) VALUES ($1, $2, $3, $4, $5)",
-        task.task_id, task.workload, task.params.to_json, task.submitted_at, task.submitted_by
+        "INSERT INTO tasks (task_id, agent_id, workload, params, submitted_at, submitted_by) VALUES ($1, $2, $3, $4, $5, $6)",
+        task.task_id, task.agent_id, task.workload, task.params.to_json, task.submitted_at, task.submitted_by
       )
     end
 

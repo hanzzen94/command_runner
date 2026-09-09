@@ -17,7 +17,7 @@ module CommandRunner
       @agent_id = config.agent_id
       @registry = WorkloadRegistry.new(config.workloads, config.limits.default_timeout)
       @executor = Executor.new(config.limits.output_bytes)
-      @amqp = AmqpClient.new(config.amqp)
+      @amqp = AmqpClient.new(config.amqp, agent_id: config.agent_id)
     end
 
     def start : Nil
