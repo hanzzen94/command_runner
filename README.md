@@ -1,113 +1,230 @@
 # command_runner
 
-A small, secure HTTPS server that triggers predefined shell workloads on the host.
-All connections require mutual TLS (mTLS) — only clients presenting a certificate
-signed by your trusted CA can connect.
+A task execution system with a central server and pull-based agents, using
+LavinMQ as the message broker.
+
+## Architecture
+
+```mermaid
+flowchart TB
+    Submitter["Task Submitter<br/>(ci-bot, etc.)"]
+
+    subgraph Server["Central Server"]
+        direction TB
+        API["Crystal HTTP API<br/>POST /tasks · GET /results"]
+        MQ["LavinMQ (AMQP)<br/>tasks queue | results queue"]
+        API -->|"publish task"| MQ
+        MQ -->|"consume result"| API
+    end
+
+    Submitter -->|"mTLS"| API
+
+    AgentA["Agent (node A)<br/>poll · execute · publish"]
+    AgentB["Agent (node B)<br/>poll · execute · publish"]
+
+    MQ -->|"AMQP (TLS)"| AgentA
+    MQ -->|"AMQP (TLS)"| AgentB
+    AgentA -->|"publish result"| MQ
+    AgentB -->|"publish result"| MQ
+```
+
+- **Central server** (`central_server` binary): mTLS-secured HTTP API that
+  accepts task submissions and publishes them to a LavinMQ `tasks` queue.
+  Consumes results from a `results` queue and stores them in-memory.
+- **Agent** (`command_runner` binary): Polls the `tasks` queue every N seconds,
+  executes the requested workload using local definitions, and publishes the
+  result to the `results` queue.
+- **LavinMQ**: AMQP 0-9-1 message broker. Shared `tasks` queue (competing
+  consumers — any available agent picks up the next task).
 
 ## Quick start
 
-**Linux / macOS:**
+### 1. Start LavinMQ
 
 ```sh
-# 1. Generate dev CA + server + client certs
-./certs/generate.sh
-
-# 2. Copy and edit config
-cp config.example.yml config.yml
-
-# 3. Build and run
-crystal build src/main.cr -o bin/command_runner
-./bin/command_runner --config config.yml
+docker compose up -d
 ```
 
-**Windows (PowerShell):**
+LavinMQ will be available on:
+- AMQP: `localhost:5672`
+- Management UI: `http://localhost:15672` (guest/guest)
 
-```powershell
-# 1. Generate dev CA + server + client certs (requires OpenSSL in PATH)
-.\certs\generate.ps1
+### 2. Generate dev certs (for central server mTLS)
 
-# 2. Copy and edit config
-Copy-Item config.example.windows.yml config.yml
+```sh
+./certs/generate.sh
+```
 
-# 3. Build and run
-crystal build src/main.cr -o bin\command_runner.exe
-.\bin\command_runner.exe --config config.yml
+### 3. Copy and edit configs
+
+```sh
+cp config.agent.example.yml config.agent.yml
+cp config.server.example.yml config.server.yml
+```
+
+### 4. Build both binaries
+
+```sh
+crystal build src/agent/main.cr -o bin/command_runner
+crystal build src/server/main.cr -o bin/central_server
+```
+
+### 5. Start the central server
+
+```sh
+./bin/central_server --config config.server.yml
+```
+
+### 6. Start an agent
+
+```sh
+./bin/command_runner --config config.agent.yml
+```
+
+### 7. Submit a task
+
+```sh
+curl --cacert certs/ca.crt \
+     --cert certs/client.crt \
+     --key certs/client.key \
+     -X POST https://localhost:8443/tasks \
+     -H 'Content-Type: application/json' \
+     -d '{"workload":"echo","params":{"message":"hello"}}'
+```
+
+Response:
+```json
+{"task_id":"...","status":"queued"}
+```
+
+### 8. Check results
+
+```sh
+curl --cacert certs/ca.crt \
+     --cert certs/client.crt \
+     --key certs/client.key \
+     https://localhost:8443/results
 ```
 
 ## API
 
 All endpoints require a client certificate signed by the configured CA.
 
-| Method | Path                        | Description                          |
-|--------|-----------------------------|--------------------------------------|
-| GET    | `/workloads`                | List workloads the client may run    |
-| POST   | `/workloads/:name/run`      | Execute a named workload             |
+| Method | Path                  | Description                          |
+|--------|-----------------------|--------------------------------------|
+| POST   | `/tasks`              | Submit a task for execution          |
+| GET    | `/results`            | List recent results                  |
+| GET    | `/results/:task_id`   | Get a specific result                |
+| GET    | `/health`             | Health check                         |
 
-### Example
+### Submit a task
 
 ```sh
-curl --cacert certs/ca.crt \
-     --cert certs/client.crt \
-     --key certs/client.key \
-     https://localhost:8443/workloads
-
-curl --cacert certs/ca.crt \
-     --cert certs/client.crt \
-     --key certs/client.key \
-     -X POST https://localhost:8443/workloads/echo/run \
+curl -X POST https://localhost:8443/tasks \
      -H 'Content-Type: application/json' \
-     -d '{"params":{"message":"hello"}}'
+     -d '{"workload":"chef_client","params":{"recipe":"cookbook::default"}}'
 ```
+
+The `workload` name and `params` must match a workload defined in the agent's
+config. The central server does not know what workloads exist — it simply
+forwards the task to the queue.
 
 ## Security
 
-- **mTLS enforced**: server requires a client cert chaining to the trusted CA;
-  connections without a valid client cert are rejected at the TLS handshake.
-- **Named workloads only**: no arbitrary command execution; commands are
-  pre-registered in config with validated parameters.
+- **mTLS enforced on central server**: only clients presenting a certificate
+  signed by the trusted CA can submit tasks.
+- **Named workloads only**: agents only execute commands pre-registered in
+  their local config. No arbitrary command execution.
 - **No shell**: all commands run via `exec` (no `sh -c`), eliminating injection.
-- **Per-client authorization**: global allowlist + per-workload `allowed_clients`.
-- **Audit logging**: every request is logged with client CN, workload, and result.
-- **Rate limiting**: per-client token bucket (configurable).
+- **Audit logging**: every task submission and result is logged.
+- **Rate limiting**: per-client token bucket on the central server.
 - **Output caps**: stdout/stderr truncated at configurable size.
 - **Timeouts**: per-workload kill on timeout.
 
 ## Configuration
 
-See `config.example.yml` (Linux/macOS) or `config.example.windows.yml` (Windows)
-for all options. Workload commands differ per platform — use the appropriate
-example as a starting point.
+### Agent (`config.agent.yml`)
 
-## systemd service
+```yaml
+agent_id: "server-01"
 
-Run `command_runner` as an unprivileged user. The service account needs read
-access to the server cert/key and CA cert, and (if using the `chef_client`
-workload) passwordless sudo for `chef-client`.
+amqp:
+  url: "amqp://agent:secretpass@localhost:5672"
+  task_queue: "tasks"
+  result_queue: "results"
+  poll_interval: 5
+  ca: certs/ca.crt  # for amqps:// TLS verification
 
-### 1. Install the binary and config
+limits:
+  output_bytes: 1048576
+  default_timeout: 30
 
-```sh
-sudo install -d -o command_runner -g command_runner /opt/command_runner
-sudo install -o command_runner -g command_runner bin/command_runner /opt/command_runner/
-sudo install -o command_runner -g command_runner -m 640 config.yml /opt/command_runner/
-sudo install -d -o command_runner -g command_runner /opt/command_runner/certs
-sudo install -o command_runner -g command_runner -m 640 certs/server.crt certs/server.key certs/ca.crt /opt/command_runner/certs/
+workloads:
+  - name: echo
+    command: ["/bin/echo", "{message}"]
+    params:
+      - name: message
+        required: true
+        pattern: "^[a-zA-Z0-9 ._-]+$"
+    timeout: 5
 ```
 
-### 2. Grant sudo for chef-client (if needed)
+### Central server (`config.server.yml`)
 
-```sh
-echo 'command_runner ALL=(root) NOPASSWD: /usr/bin/chef-client' | sudo tee /etc/sudoers.d/command_runner
-sudo chmod 440 /etc/sudoers.d/command_runner
-sudo visudo -c  # validate syntax
+```yaml
+listen: "0.0.0.0:8443"
+
+tls:
+  cert: certs/server.crt
+  key: certs/server.key
+  ca: certs/ca.crt
+
+amqp:
+  url: "amqp://server:secretpass@localhost:5672"
+  task_queue: "tasks"
+  result_queue: "results"
+
+allowed_clients:
+  - ci-bot
+
+limits:
+  request_body_bytes: 65536
+  rate_per_minute: 60
+
+results:
+  max_stored: 10000
 ```
 
-### 3. Create the service unit
+## Project structure
+
+```
+src/
+  command_runner.cr       # Shared: module, error types, log
+  config.cr               # Shared: AgentConfig, ServerConfig, AmqpConfig, etc.
+  tls.cr                  # Shared: TLS context builders (server + client)
+  task.cr                 # Shared: Task, TaskResult, TaskReceipt structs
+  amqp.cr                 # Shared: AmqpClient wrapper
+  agent/
+    main.cr               # Agent entry point
+    agent.cr              # Polling loop: pull tasks, execute, publish results
+    executor.cr           # Process execution with timeout + output caps
+    workloads.cr          # Workload registry: param validation, command building
+  server/
+    main.cr               # Server entry point
+    central_server.cr     # HTTP server + AMQP publisher + results consumer
+    router.cr             # HTTP routes: POST /tasks, GET /results
+    auth.cr               # mTLS client cert extraction + CN authorization
+    middleware.cr          # Error handling, request size, audit log, rate limit
+```
+
+## systemd services
+
+### Central server
 
 ```sh
-sudo tee /etc/systemd/system/command_runner.service > /dev/null <<'UNIT'
+sudo tee /etc/systemd/system/central_server.service > /dev/null <<'UNIT'
 [Unit]
-Description=Command Runner (mTLS workload server)
+Description=Command Runner Central Server
 After=network-online.target
 Wants=network-online.target
 
@@ -116,11 +233,10 @@ Type=simple
 User=command_runner
 Group=command_runner
 WorkingDirectory=/opt/command_runner
-ExecStart=/opt/command_runner/command_runner --config /opt/command_runner/config.yml
+ExecStart=/opt/command_runner/central_server --config /opt/command_runner/config.server.yml
 Restart=on-failure
 RestartSec=5
 
-# Hardening
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -131,11 +247,49 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 LockPersonality=true
-MemoryDenyWriteExecute=false
 RestrictRealtime=true
 RestrictSUIDSGID=true
 
-# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=central_server
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+```
+
+### Agent
+
+```sh
+sudo tee /etc/systemd/system/command_runner.service > /dev/null <<'UNIT'
+[Unit]
+Description=Command Runner Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=command_runner
+Group=command_runner
+WorkingDirectory=/opt/command_runner
+ExecStart=/opt/command_runner/command_runner --config /opt/command_runner/config.agent.yml
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=command_runner
@@ -144,85 +298,3 @@ SyslogIdentifier=command_runner
 WantedBy=multi-user.target
 UNIT
 ```
-
-### 4. Enable and start
-
-```sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now command_runner
-sudo systemctl status command_runner
-sudo journalctl -u command_runner -f
-```
-
-> **Note**: `ProtectSystem=strict` makes the filesystem read-only except for
-> paths listed in `ReadWritePaths`. If your workloads need to write to other
-> directories (e.g. `/var/chef`), add them to `ReadWritePaths`.
-
-## Windows service
-
-Run `command_runner` as a Windows service using [NSSM](https://nssm.cc/)
-(Non-Sucking Service Manager). The service account needs read access to the
-server cert/key and CA cert. On Windows, `chef-client` runs as a scheduled
-task or service — no `sudo` equivalent is needed.
-
-### 1. Install NSSM
-
-```powershell
-choco install nssm
-```
-
-### 2. Install the binary and config
-
-```powershell
-$InstallDir = "C:\Program Files\command_runner"
-New-Item -ItemType Directory -Force -Path $InstallDir
-Copy-Item bin\command_runner.exe $InstallDir\
-Copy-Item config.yml $InstallDir\
-New-Item -ItemType Directory -Force -Path "$InstallDir\certs"
-Copy-Item certs\server.crt, certs\server.key, certs\ca.crt "$InstallDir\certs\"
-```
-
-### 3. Create the service account
-
-```powershell
-# Create a standard user (or use an existing service account)
-net user command_runner "StrongPassword!" /add
-# Grant "Log on as a service" right via Group Policy or:
-ntrights +r SeServiceLogonRight -u command_runner
-```
-
-### 4. Register and start the service
-
-```powershell
-nssm install command_runner "$InstallDir\command_runner.exe"
-nssm set command_runner AppParameters "--config `"$InstallDir\config.yml`""
-nssm set command_runner AppDirectory $InstallDir
-nssm set command_runner AppStdout "$InstallDir\logs\stdout.log"
-nssm set command_runner AppStderr "$InstallDir\logs\stderr.log"
-nssm set command_runner AppRotateFiles 1
-nssm set command_runner AppRotateBytes 10485760
-nssm set command_runner AppExit Default Restart
-nssm set command_runner AppRestartDelay 5000
-
-# Set the service to run as the service account
-nssm set command_runner ObjectName ".\command_runner" "StrongPassword!"
-
-# Start
-nssm start command_runner
-```
-
-### 5. Manage the service
-
-```powershell
-nssm status command_runner      # check status
-nssm restart command_runner     # restart
-nssm stop command_runner        # stop
-nssm remove command_runner      # uninstall
-Get-Content "$InstallDir\logs\stdout.log" -Tail 20 -Wait  # tail logs
-```
-
-> **Note**: Ensure the service account has read access to the cert files in
-> `$InstallDir\certs\`. Use `icacls` to grant access:
-> ```powershell
-> icacls "$InstallDir\certs\server.key" /grant command_runner:R
-> ```

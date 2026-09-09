@@ -34,7 +34,7 @@ module CommandRunner
     )
     end
 
-    def self.from_config(wc : Config::WorkloadConfig, default_timeout : Int32) : self
+    def self.from_config(wc : WorkloadConfig, default_timeout : Int32) : self
       params = wc.params.map do |pc|
         pattern = pc.pattern.try { |p| Regex.new(p) }
         ParamSpec.new(pc.name, pc.required, pattern)
@@ -100,7 +100,7 @@ module CommandRunner
   class WorkloadRegistry
     private getter workloads : Hash(String, Workload)
 
-    def initialize(configs : Array(Config::WorkloadConfig), default_timeout : Int32)
+    def initialize(configs : Array(WorkloadConfig), default_timeout : Int32)
       @workloads = {} of String => Workload
       configs.each do |wc|
         if @workloads.has_key?(wc.name)

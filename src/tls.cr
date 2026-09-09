@@ -2,18 +2,10 @@ require "openssl"
 
 module CommandRunner
   module TLS
-    def self.build_context(config : Config::TLSConfig) : OpenSSL::SSL::Context::Server
+    def self.build_context(config : TLSConfig) : OpenSSL::SSL::Context::Server
       context = OpenSSL::SSL::Context::Server.new
 
-      unless File.exists?(config.cert)
-        raise Error.new("Server certificate not found: #{config.cert}")
-      end
-      unless File.exists?(config.key)
-        raise Error.new("Server private key not found: #{config.key}")
-      end
-      unless File.exists?(config.ca)
-        raise Error.new("CA certificate not found: #{config.ca}")
-      end
+      validate_cert_files(config.cert, config.key, config.ca)
 
       context.certificate_chain = config.cert
       context.private_key = config.key
@@ -25,6 +17,32 @@ module CommandRunner
       context.security_level = 2
 
       context
+    end
+
+    def self.build_client_context(ca_path : String) : OpenSSL::SSL::Context::Client
+      context = OpenSSL::SSL::Context::Client.new
+
+      unless File.exists?(ca_path)
+        raise Error.new("CA certificate not found: #{ca_path}")
+      end
+
+      context.ca_certificates = ca_path
+      context.verify_mode = OpenSSL::SSL::VerifyMode::PEER
+      context.security_level = 2
+
+      context
+    end
+
+    private def self.validate_cert_files(cert : String, key : String, ca : String) : Nil
+      unless File.exists?(cert)
+        raise Error.new("Server certificate not found: #{cert}")
+      end
+      unless File.exists?(key)
+        raise Error.new("Server private key not found: #{key}")
+      end
+      unless File.exists?(ca)
+        raise Error.new("CA certificate not found: #{ca}")
+      end
     end
   end
 end

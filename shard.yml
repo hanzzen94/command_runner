@@ -6,7 +6,15 @@ authors:
 
 targets:
   command_runner:
-    main: src/main.cr
+    main: src/agent/main.cr
+  central_server:
+    main: src/server/main.cr
+
+dependencies:
+  amqp-client:
+    github: cloudamqp/amqp-client.cr
+  pg:
+    github: will/crystal-pg
 
 crystal: '>= 1.21.0'
 

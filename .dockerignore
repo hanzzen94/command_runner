@@ -1,0 +1,12 @@
+.git
+/lib
+/bin
+/.shards
+/docs
+/spec
+*.dwarf
+config.yml
+config.agent.yml
+config.server.yml
+config.*.docker.yml
+certs

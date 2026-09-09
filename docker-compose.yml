@@ -1,0 +1,45 @@
+services:
+  lavinmq:
+    image: "cloudamqp/lavinmq:latest"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - lavinmq_data:/var/lib/lavinmq
+
+  postgres:
+    image: "postgres:16-bookworm"
+    environment:
+      POSTGRES_USER: command_runner
+      POSTGRES_PASSWORD: secretpass
+      POSTGRES_DB: command_runner
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  central_server:
+    build: .
+    command: ["./bin/central_server", "--config", "/app/config.server.yml"]
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./certs:/app/certs:ro
+      - ./config.server.docker.yml:/app/config.server.yml:ro
+    depends_on:
+      - lavinmq
+      - postgres
+    restart: on-failure
+
+  agent:
+    build: .
+    command: ["./bin/command_runner", "--config", "/app/config.agent.yml"]
+    volumes:
+      - ./config.agent.docker.yml:/app/config.agent.yml:ro
+    depends_on:
+      - lavinmq
+    restart: on-failure
+
+volumes:
+  lavinmq_data:
+  postgres_data:

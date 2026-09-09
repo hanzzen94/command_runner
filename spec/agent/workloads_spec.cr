@@ -1,10 +1,11 @@
-require "./spec_helper"
+require "../spec_helper"
+require "../../src/agent/workloads"
 include CommandRunner
 
 describe CommandRunner::Workload do
   describe ".from_config" do
     it "compiles param patterns into regexes" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: test
       command: ["/bin/echo", "{val}"]
       params:
@@ -23,7 +24,7 @@ describe CommandRunner::Workload do
     end
 
     it "uses default timeout when not specified" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: test
       command: ["/bin/true"]
       YAML
@@ -33,7 +34,7 @@ describe CommandRunner::Workload do
     end
 
     it "uses workload timeout over default" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: test
       command: ["/bin/true"]
       timeout: 10
@@ -46,7 +47,7 @@ describe CommandRunner::Workload do
 
   describe "#allowed?" do
     it "allows any client when no restriction" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: open
       command: ["/bin/true"]
       YAML
@@ -56,7 +57,7 @@ describe CommandRunner::Workload do
     end
 
     it "restricts to listed clients" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: restricted
       command: ["/bin/true"]
       allowed_clients:
@@ -73,7 +74,7 @@ describe CommandRunner::Workload do
 
   describe "#build_command" do
     it "substitutes {param} placeholders" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: echo
       command: ["/bin/echo", "{msg}"]
       params:
@@ -87,7 +88,7 @@ describe CommandRunner::Workload do
     end
 
     it "substitutes inline {param} within a larger argument" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: chef
       command: ["sudo", "chef-client", "-o", "recipe[{recipe}]"]
       params:
@@ -102,7 +103,7 @@ describe CommandRunner::Workload do
     end
 
     it "raises on missing required param" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: echo
       command: ["/bin/echo", "{msg}"]
       params:
@@ -117,7 +118,7 @@ describe CommandRunner::Workload do
     end
 
     it "passes through non-placeholder args" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: df
       command: ["/bin/df", "-h"]
       YAML
@@ -130,7 +131,7 @@ describe CommandRunner::Workload do
 
   describe "#validate_params" do
     it "rejects unknown params" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: test
       command: ["/bin/true"]
       YAML
@@ -142,7 +143,7 @@ describe CommandRunner::Workload do
     end
 
     it "rejects missing required params" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: test
       command: ["/bin/echo", "{val}"]
       params:
@@ -157,7 +158,7 @@ describe CommandRunner::Workload do
     end
 
     it "rejects params that fail pattern" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: test
       command: ["/bin/echo", "{val}"]
       params:
@@ -173,7 +174,7 @@ describe CommandRunner::Workload do
     end
 
     it "passes with valid params" do
-      wc = Config::WorkloadConfig.from_yaml(<<-YAML)
+      wc = WorkloadConfig.from_yaml(<<-YAML)
       name: test
       command: ["/bin/echo", "{val}"]
       params:
@@ -191,11 +192,11 @@ end
 describe CommandRunner::WorkloadRegistry do
   it "builds registry from config" do
     configs = [
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: alpha
       command: ["/bin/true"]
       YAML
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: beta
       command: ["/bin/true"]
       allowed_clients:
@@ -212,11 +213,11 @@ describe CommandRunner::WorkloadRegistry do
 
   it "raises on duplicate names" do
     configs = [
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: dup
       command: ["/bin/true"]
       YAML
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: dup
       command: ["/bin/true"]
       YAML
@@ -229,11 +230,11 @@ describe CommandRunner::WorkloadRegistry do
 
   it "filters visible workloads by client" do
     configs = [
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: open
       command: ["/bin/true"]
       YAML
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: restricted
       command: ["/bin/true"]
       allowed_clients:

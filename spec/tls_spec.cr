@@ -13,7 +13,7 @@ describe CommandRunner::TLS do
       run_openssl(dir, "req", "-new", "-key", "server.key", "-subj", "/CN=localhost", "-out", "server.csr")
       run_openssl(dir, "x509", "-req", "-in", "server.csr", "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial", "-out", "server.crt", "-days", "1", "-sha256")
 
-      config = Config::TLSConfig.from_yaml({"cert" => "#{dir}/server.crt", "key" => "#{dir}/server.key", "ca" => "#{dir}/ca.crt"}.to_yaml)
+      config = TLSConfig.from_yaml({"cert" => "#{dir}/server.crt", "key" => "#{dir}/server.key", "ca" => "#{dir}/ca.crt"}.to_yaml)
       context = TLS.build_context(config)
 
       context.verify_mode.includes?(OpenSSL::SSL::VerifyMode::PEER).should be_true
@@ -25,7 +25,7 @@ describe CommandRunner::TLS do
   end
 
   it "raises when cert files are missing" do
-    config = Config::TLSConfig.from_yaml({"cert" => "/nonexistent/cert", "key" => "/nonexistent/key", "ca" => "/nonexistent/ca"}.to_yaml)
+    config = TLSConfig.from_yaml({"cert" => "/nonexistent/cert", "key" => "/nonexistent/key", "ca" => "/nonexistent/ca"}.to_yaml)
 
     expect_raises(CommandRunner::Error, "Server certificate not found") do
       TLS.build_context(config)

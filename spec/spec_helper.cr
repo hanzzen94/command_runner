@@ -1,2 +1,5 @@
 require "spec"
 require "../src/command_runner"
+require "../src/config"
+require "../src/tls"
+require "../src/task"

@@ -1,0 +1,24 @@
+listen: "0.0.0.0:8443"
+
+tls:
+  cert: certs/server.crt
+  key: certs/server.key
+  ca: certs/ca.crt
+
+amqp:
+  url: "amqp://server:secretpass@localhost:5672"
+  task_queue: "tasks"
+  result_queue: "results"
+  poll_interval: 5
+  # ca: certs/ca.crt  # uncomment for amqps:// TLS verification
+
+allowed_clients:
+  - ci-bot
+
+limits:
+  request_body_bytes: 65536
+  rate_per_minute: 60
+
+results:
+  url: "postgres://command_runner:secretpass@localhost:5432/command_runner"
+  results_limit: 100

@@ -1,4 +1,6 @@
-require "./spec_helper"
+require "../spec_helper"
+require "../../src/agent/executor"
+require "../../src/agent/workloads"
 include CommandRunner
 
 # Platform-specific test commands
@@ -23,7 +25,7 @@ describe CommandRunner::Executor do
 
   it "runs a simple command" do
     workload = Workload.from_config(
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: echo
       command: #{ECHO + ["hello world"]}
       YAML
@@ -41,7 +43,7 @@ describe CommandRunner::Executor do
 
   it "captures nonzero exit codes" do
     workload = Workload.from_config(
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: fail
       command: #{SH + ["exit 7"]}
       YAML
@@ -54,7 +56,7 @@ describe CommandRunner::Executor do
 
   it "captures stderr separately" do
     workload = Workload.from_config(
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: stderr_test
       command: #{STDERR_CMD}
       YAML
@@ -68,7 +70,7 @@ describe CommandRunner::Executor do
 
   it "substitutes params" do
     workload = Workload.from_config(
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: echo_param
       command: #{ECHO + ["{msg}"]}
       params:
@@ -84,7 +86,7 @@ describe CommandRunner::Executor do
 
   it "kills on timeout" do
     workload = Workload.from_config(
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: slow
       command: #{SLEEP + ["30"]}
       timeout: 1
@@ -99,7 +101,7 @@ describe CommandRunner::Executor do
 
   it "truncates large output" do
     workload = Workload.from_config(
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: verbose
       command: #{BIG_OUT}
       YAML
@@ -114,7 +116,7 @@ describe CommandRunner::Executor do
 
   it "raises on missing required param" do
     workload = Workload.from_config(
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: needs_param
       command: #{ECHO + ["{val}"]}
       params:
@@ -131,7 +133,7 @@ describe CommandRunner::Executor do
 
   it "raises on unknown param" do
     workload = Workload.from_config(
-      Config::WorkloadConfig.from_yaml(<<-YAML),
+      WorkloadConfig.from_yaml(<<-YAML),
       name: no_params
       command: #{TRUE}
       YAML
