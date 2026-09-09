@@ -61,7 +61,7 @@ module CommandRunner
         cn = context.client_cn || "unknown"
         Log.info do
           "#{context.request.method} #{context.request.path} " \
-          "-> #{context.response.status_code} (#{duration}ms) " \
+          "-> #{context.response.status_code} (#{duration}us) " \
           "client=#{cn} remote=#{context.request.remote_address}"
         end
       end
