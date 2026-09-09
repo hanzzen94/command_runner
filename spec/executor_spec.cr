@@ -36,7 +36,7 @@ describe CommandRunner::Executor do
     result.stderr.should be_empty
     result.truncated.should be_false
     result.timed_out.should be_false
-    result.duration_ms.should be >= 0
+    result.duration_us.should be >= 0
   end
 
   it "captures nonzero exit codes" do
@@ -94,7 +94,7 @@ describe CommandRunner::Executor do
 
     result = executor.run(workload, {} of String => String)
     result.timed_out.should be_true
-    result.duration_ms.should be < 5000
+    result.duration_us.should be < 5000000
   end
 
   it "truncates large output" do
