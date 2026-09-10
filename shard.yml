@@ -9,6 +9,8 @@ targets:
     main: src/agent/main.cr
   central_server:
     main: src/server/main.cr
+  ameba:
+    main: lib/ameba/bin/ameba.cr
 
 dependencies:
   amqp-client:

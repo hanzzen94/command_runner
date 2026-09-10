@@ -61,7 +61,7 @@ module CommandRunner
       include YAML::Serializable
 
       getter name : String
-      getter required : Bool = false
+      getter? required : Bool = false
       getter pattern : String?
     end
   end
@@ -93,5 +93,4 @@ module CommandRunner
       from_yaml(File.read(path))
     end
   end
-
 end

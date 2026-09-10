@@ -4,27 +4,27 @@ include CommandRunner
 describe CommandRunner::AgentConfig do
   it "parses a full agent config" do
     yaml = <<-YAML
-    server_cloud_id: "550e8400-e29b-41d4-a716-446655440000"
-    amqp:
-      url: "amqp://agent:pass@localhost:5672"
-      task_queue: "tasks"
-      result_queue: "results"
-      poll_interval: 3
-    limits:
-      output_bytes: 2048
-      default_timeout: 15
-    workloads:
-      - name: echo
-        command: ["/bin/echo", "{msg}"]
-        params:
-          - name: msg
-            required: true
-            pattern: "^[a-z]+$"
-        timeout: 5
-        cwd: /tmp
-      - name: status
-        command: ["/bin/true"]
-    YAML
+      server_cloud_id: "550e8400-e29b-41d4-a716-446655440000"
+      amqp:
+        url: "amqp://agent:pass@localhost:5672"
+        task_queue: "tasks"
+        result_queue: "results"
+        poll_interval: 3
+      limits:
+        output_bytes: 2048
+        default_timeout: 15
+      workloads:
+        - name: echo
+          command: ["/bin/echo", "{msg}"]
+          params:
+            - name: msg
+              required: true
+              pattern: "^[a-z]+$"
+          timeout: 5
+          cwd: /tmp
+        - name: status
+          command: ["/bin/true"]
+      YAML
 
     config = AgentConfig.from_yaml(yaml)
     config.server_cloud_id.should eq("550e8400-e29b-41d4-a716-446655440000")
@@ -41,7 +41,7 @@ describe CommandRunner::AgentConfig do
     w0.command.should eq(["/bin/echo", "{msg}"])
     w0.params.size.should eq(1)
     w0.params[0].name.should eq("msg")
-    w0.params[0].required.should be_true
+    w0.params[0].required?.should be_true
     w0.params[0].pattern.should eq("^[a-z]+$")
     w0.timeout.should eq(5)
     w0.cwd.should eq("/tmp")
@@ -55,13 +55,13 @@ describe CommandRunner::AgentConfig do
 
   it "applies defaults for missing fields" do
     yaml = <<-YAML
-    server_cloud_id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
-    amqp:
-      url: "amqp://localhost"
-    workloads:
-      - name: hello
-        command: ["/bin/true"]
-    YAML
+      server_cloud_id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+      amqp:
+        url: "amqp://localhost"
+      workloads:
+        - name: hello
+          command: ["/bin/true"]
+      YAML
 
     config = AgentConfig.from_yaml(yaml)
     config.server_cloud_id.should eq("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
@@ -78,23 +78,23 @@ end
 describe CommandRunner::ServerConfig do
   it "parses a full server config" do
     yaml = <<-YAML
-    listen: "0.0.0.0:9000"
-    tls:
-      cert: /path/cert.pem
-      key: /path/key.pem
-      ca: /path/ca.pem
-    amqp:
-      url: "amqp://server:pass@localhost:5672"
-    allowed_clients:
-      - alice
-      - bob
-    limits:
-      request_body_bytes: 1024
-      rate_per_minute: 30
-    results:
-      url: "postgres://user:pass@localhost:5432/db"
-      results_limit: 50
-    YAML
+      listen: "0.0.0.0:9000"
+      tls:
+        cert: /path/cert.pem
+        key: /path/key.pem
+        ca: /path/ca.pem
+      amqp:
+        url: "amqp://server:pass@localhost:5672"
+      allowed_clients:
+        - alice
+        - bob
+      limits:
+        request_body_bytes: 1024
+        rate_per_minute: 30
+      results:
+        url: "postgres://user:pass@localhost:5432/db"
+        results_limit: 50
+      YAML
 
     config = ServerConfig.from_yaml(yaml)
     config.listen.should eq("0.0.0.0:9000")
@@ -109,13 +109,13 @@ describe CommandRunner::ServerConfig do
 
   it "applies defaults for missing fields" do
     yaml = <<-YAML
-    tls:
-      cert: c
-      key: k
-      ca: a
-    amqp:
-      url: "amqp://localhost"
-    YAML
+      tls:
+        cert: c
+        key: k
+        ca: a
+      amqp:
+        url: "amqp://localhost"
+      YAML
 
     config = ServerConfig.from_yaml(yaml)
     config.listen.should eq("0.0.0.0:8443")

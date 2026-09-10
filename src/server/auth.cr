@@ -41,10 +41,10 @@ module CommandRunner
 
     private def extract_client_cn(context : HTTP::Server::Context) : String?
       io = context.response.underlying_io
-      return nil unless io.is_a?(OpenSSL::SSL::Socket::Server)
+      return unless io.is_a?(OpenSSL::SSL::Socket::Server)
 
       cert = io.peer_certificate
-      return nil unless cert
+      return unless cert
 
       cert.subject.to_a.each do |oid, value|
         return value if oid == "CN"

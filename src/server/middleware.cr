@@ -102,7 +102,7 @@ module CommandRunner
           window = 60.seconds
 
           bucket = @buckets[cn] ||= [] of Time::Instant
-          bucket.reject! { |t| t < (now - window) }
+          bucket.reject! { |timestamp| timestamp < (now - window) }
 
           if bucket.size >= @max_per_minute
             true

@@ -55,8 +55,8 @@ describe CommandRunner::TaskResult do
     restored.exit_code.should eq(0)
     restored.stdout.should eq("hello\n")
     restored.stderr.should eq("")
-    restored.truncated.should be_false
-    restored.timed_out.should be_false
+    restored.truncated?.should be_false
+    restored.timed_out?.should be_false
     restored.duration_us.should eq(5000)
     restored.error.should be_nil
   end

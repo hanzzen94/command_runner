@@ -8,8 +8,8 @@ module CommandRunner
     getter exit_code : Int32
     getter stdout : String
     getter stderr : String
-    getter truncated : Bool
-    getter timed_out : Bool
+    getter? truncated : Bool
+    getter? timed_out : Bool
     getter duration_us : Int64
 
     def initialize(@exit_code, @stdout, @stderr, @truncated, @timed_out, @duration_us)

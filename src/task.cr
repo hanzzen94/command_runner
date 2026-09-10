@@ -28,8 +28,8 @@ module CommandRunner
     getter exit_code : Int32
     getter stdout : String
     getter stderr : String
-    getter truncated : Bool
-    getter timed_out : Bool
+    getter? truncated : Bool
+    getter? timed_out : Bool
     getter duration_us : Int64
     getter executed_at : String
     getter error : String?
@@ -57,8 +57,8 @@ module CommandRunner
         exit_code: result.exit_code,
         stdout: result.stdout,
         stderr: result.stderr,
-        truncated: result.truncated,
-        timed_out: result.timed_out,
+        truncated: result.truncated?,
+        timed_out: result.timed_out?,
         duration_us: result.duration_us,
       )
     end

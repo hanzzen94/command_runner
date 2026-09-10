@@ -1,7 +1,7 @@
 module CommandRunner
   struct ParamSpec
     getter name : String
-    getter required : Bool
+    getter? required : Bool
     getter pattern : Regex?
 
     def initialize(@name : String, @required : Bool, @pattern : Regex?)
@@ -35,9 +35,9 @@ module CommandRunner
     end
 
     def self.from_config(wc : WorkloadConfig, default_timeout : Int32) : self
-      params = wc.params.map do |pc|
-        pattern = pc.pattern.try { |p| Regex.new(p) }
-        ParamSpec.new(pc.name, pc.required, pattern)
+      params = wc.params.map do |param_config|
+        pattern = param_config.pattern.try { |pattern_str| Regex.new(pattern_str) }
+        ParamSpec.new(param_config.name, param_config.required?, pattern)
       end
 
       timeout = wc.timeout || default_timeout
@@ -89,7 +89,7 @@ module CommandRunner
       @params.each do |spec|
         value = params[spec.name]?
         if value.nil?
-          raise ValidationError.new("missing required parameter: #{spec.name}") if spec.required
+          raise ValidationError.new("missing required parameter: #{spec.name}") if spec.required?
         elsif !spec.validate(value)
           raise ValidationError.new("parameter #{spec.name} failed validation")
         end
@@ -102,11 +102,11 @@ module CommandRunner
 
     def initialize(configs : Array(WorkloadConfig), default_timeout : Int32)
       @workloads = {} of String => Workload
-      configs.each do |wc|
-        if @workloads.has_key?(wc.name)
-          raise Error.new("Duplicate workload name: #{wc.name}")
+      configs.each do |config|
+        if @workloads.has_key?(config.name)
+          raise Error.new("Duplicate workload name: #{config.name}")
         end
-        @workloads[wc.name] = Workload.from_config(wc, default_timeout)
+        @workloads[config.name] = Workload.from_config(config, default_timeout)
       end
     end
 
@@ -119,7 +119,7 @@ module CommandRunner
     end
 
     def visible_to(client_cn : String) : Array(Workload)
-      @workloads.values.select { |w| w.allowed?(client_cn) }
+      @workloads.values.select(&.allowed?(client_cn))
     end
 
     def size : Int32

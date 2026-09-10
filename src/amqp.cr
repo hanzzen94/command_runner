@@ -28,20 +28,21 @@ module CommandRunner
       @user = uri.user || "guest"
       @password = uri.password || "guest"
 
-      if config.ca
-        @tls_context = TLS.build_client_context(config.ca.not_nil!, cert: config.cert, key: config.key)
+      if ca = config.ca
+        @tls_context = TLS.build_client_context(ca, cert: config.cert, key: config.key)
       end
     end
 
     def connect : Nil
       tls = @tls_context
-      if tls
-        @connection = AMQP::Client.new(@host, @port, @vhost, @user, @password, tls).connect
-      else
-        @connection = AMQP::Client.new(@host, @port, @vhost, @user, @password).connect
-      end
+      conn = if tls
+               AMQP::Client.new(@host, @port, @vhost, @user, @password, tls).connect
+             else
+               AMQP::Client.new(@host, @port, @vhost, @user, @password).connect
+             end
+      @connection = conn
 
-      @connection.not_nil!.on_disconnect do |ex|
+      conn.on_disconnect do |ex|
         Log.warn { "AMQP connection lost: #{ex.message}" }
       end
 
@@ -69,11 +70,11 @@ module CommandRunner
 
     private def declare_queues : Nil
       conn = connection
-      conn.channel do |ch|
-        ch.queue(@result_queue, durable: true)
+      conn.channel do |channel|
+        channel.queue(@result_queue, durable: true)
         if scid = @server_cloud_id
           q = task_queue_for(scid)
-          ch.queue(q, durable: true)
+          channel.queue(q, durable: true)
           Log.info { "declared task queue: #{q}" }
         end
       end
@@ -147,7 +148,9 @@ module CommandRunner
 
     private def connection : AMQP::Client::Connection
       conn = @connection
-      raise Error.new("AMQP not connected") unless conn && !conn.closed?
+      if conn.nil? || conn.closed?
+        raise Error.new("AMQP not connected")
+      end
       conn
     end
   end

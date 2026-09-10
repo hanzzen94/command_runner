@@ -48,13 +48,11 @@ module CommandRunner
 
     private def connect_with_retry : Nil
       loop do
-        begin
-          @amqp.connect
-          return
-        rescue ex : Exception
-          Log.error { "AMQP connection failed: #{ex.message}, retrying in 5s..." }
-          sleep 5.seconds
-        end
+        @amqp.connect
+        return
+      rescue ex : Exception
+        Log.error { "AMQP connection failed: #{ex.message}, retrying in 5s..." }
+        sleep 5.seconds
       end
     end
 

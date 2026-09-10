@@ -31,7 +31,7 @@ module CommandRunner
           submitted_by      TEXT NOT NULL DEFAULT '',
           status            TEXT NOT NULL DEFAULT 'queued'
         )
-      SQL
+        SQL
 
       @db.exec <<-SQL
         CREATE TABLE IF NOT EXISTS task_results (
@@ -47,7 +47,7 @@ module CommandRunner
           executed_at       TEXT NOT NULL,
           error             TEXT
         )
-      SQL
+        SQL
 
       @db.exec "CREATE INDEX IF NOT EXISTS idx_tasks_customer_id ON tasks(customer_id)"
       @db.exec "CREATE INDEX IF NOT EXISTS idx_task_results_customer_id ON task_results(customer_id)"
@@ -65,22 +65,22 @@ module CommandRunner
       @db.transaction do |tx|
         tx.connection.exec(
           <<-SQL,
-          INSERT INTO task_results (task_id, server_cloud_id, customer_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-          ON CONFLICT (task_id) DO UPDATE SET
-            server_cloud_id = EXCLUDED.server_cloud_id,
-            customer_id = EXCLUDED.customer_id,
-            exit_code = EXCLUDED.exit_code,
-            stdout = EXCLUDED.stdout,
-            stderr = EXCLUDED.stderr,
-            truncated = EXCLUDED.truncated,
-            timed_out = EXCLUDED.timed_out,
-            duration_us = EXCLUDED.duration_us,
-            executed_at = EXCLUDED.executed_at,
-            error = EXCLUDED.error
-          SQL
+            INSERT INTO task_results (task_id, server_cloud_id, customer_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT (task_id) DO UPDATE SET
+              server_cloud_id = EXCLUDED.server_cloud_id,
+              customer_id = EXCLUDED.customer_id,
+              exit_code = EXCLUDED.exit_code,
+              stdout = EXCLUDED.stdout,
+              stderr = EXCLUDED.stderr,
+              truncated = EXCLUDED.truncated,
+              timed_out = EXCLUDED.timed_out,
+              duration_us = EXCLUDED.duration_us,
+              executed_at = EXCLUDED.executed_at,
+              error = EXCLUDED.error
+            SQL
           result.task_id, result.server_cloud_id, result.customer_id, result.exit_code, result.stdout,
-          result.stderr, result.truncated, result.timed_out, result.duration_us,
+          result.stderr, result.truncated?, result.timed_out?, result.duration_us,
           result.executed_at, result.error
         )
         tx.connection.exec(
@@ -94,19 +94,19 @@ module CommandRunner
       @db.query_one?(
         "SELECT task_id, server_cloud_id, customer_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error FROM task_results WHERE task_id = $1",
         task_id
-      ) do |rs|
+      ) do |result_set|
         TaskResult.new(
-          task_id: rs.read(String),
-          server_cloud_id: rs.read(String),
-          customer_id: rs.read(String),
-          exit_code: rs.read(Int32),
-          stdout: rs.read(String),
-          stderr: rs.read(String),
-          truncated: rs.read(Bool),
-          timed_out: rs.read(Bool),
-          duration_us: rs.read(Int64),
-          executed_at: rs.read(String),
-          error: rs.read(String?),
+          task_id: result_set.read(String),
+          server_cloud_id: result_set.read(String),
+          customer_id: result_set.read(String),
+          exit_code: result_set.read(Int32),
+          stdout: result_set.read(String),
+          stderr: result_set.read(String),
+          truncated: result_set.read(Bool),
+          timed_out: result_set.read(Bool),
+          duration_us: result_set.read(Int64),
+          executed_at: result_set.read(String),
+          error: result_set.read(String?),
         )
       end
     end
@@ -119,20 +119,20 @@ module CommandRunner
         @db.query(
           "SELECT task_id, server_cloud_id, customer_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error FROM task_results WHERE customer_id = $1 ORDER BY executed_at DESC LIMIT $2 OFFSET $3",
           customer_id, lim, offset
-        ) do |rs|
-          rs.each do
+        ) do |result_set|
+          result_set.each do
             results << TaskResult.new(
-              task_id: rs.read(String),
-              server_cloud_id: rs.read(String),
-              customer_id: rs.read(String),
-              exit_code: rs.read(Int32),
-              stdout: rs.read(String),
-              stderr: rs.read(String),
-              truncated: rs.read(Bool),
-              timed_out: rs.read(Bool),
-              duration_us: rs.read(Int64),
-              executed_at: rs.read(String),
-              error: rs.read(String?),
+              task_id: result_set.read(String),
+              server_cloud_id: result_set.read(String),
+              customer_id: result_set.read(String),
+              exit_code: result_set.read(Int32),
+              stdout: result_set.read(String),
+              stderr: result_set.read(String),
+              truncated: result_set.read(Bool),
+              timed_out: result_set.read(Bool),
+              duration_us: result_set.read(Int64),
+              executed_at: result_set.read(String),
+              error: result_set.read(String?),
             )
           end
         end
@@ -140,20 +140,20 @@ module CommandRunner
         @db.query(
           "SELECT task_id, server_cloud_id, customer_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error FROM task_results ORDER BY executed_at DESC LIMIT $1 OFFSET $2",
           lim, offset
-        ) do |rs|
-          rs.each do
+        ) do |result_set|
+          result_set.each do
             results << TaskResult.new(
-              task_id: rs.read(String),
-              server_cloud_id: rs.read(String),
-              customer_id: rs.read(String),
-              exit_code: rs.read(Int32),
-              stdout: rs.read(String),
-              stderr: rs.read(String),
-              truncated: rs.read(Bool),
-              timed_out: rs.read(Bool),
-              duration_us: rs.read(Int64),
-              executed_at: rs.read(String),
-              error: rs.read(String?),
+              task_id: result_set.read(String),
+              server_cloud_id: result_set.read(String),
+              customer_id: result_set.read(String),
+              exit_code: result_set.read(Int32),
+              stdout: result_set.read(String),
+              stderr: result_set.read(String),
+              truncated: result_set.read(Bool),
+              timed_out: result_set.read(Bool),
+              duration_us: result_set.read(Int64),
+              executed_at: result_set.read(String),
+              error: result_set.read(String?),
             )
           end
         end
@@ -182,12 +182,10 @@ module CommandRunner
 
     private def init_database(config : DatabaseConfig) : Database
       loop do
-        begin
-          return Database.new(config)
-        rescue ex : Exception
-          Log.error { "Database connection failed: #{ex.message}, retrying in 5s..." }
-          sleep 5.seconds
-        end
+        return Database.new(config)
+      rescue ex : Exception
+        Log.error { "Database connection failed: #{ex.message}, retrying in 5s..." }
+        sleep 5.seconds
       end
     end
 
@@ -195,13 +193,11 @@ module CommandRunner
       @running = true
 
       loop do
-        begin
-          @amqp.connect
-          break
-        rescue ex : Exception
-          Log.error { "AMQP connection failed: #{ex.message}, retrying in 5s..." }
-          sleep 5.seconds
-        end
+        @amqp.connect
+        break
+      rescue ex : Exception
+        Log.error { "AMQP connection failed: #{ex.message}, retrying in 5s..." }
+        sleep 5.seconds
       end
 
       spawn consume_results_loop

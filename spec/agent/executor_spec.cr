@@ -26,9 +26,9 @@ describe CommandRunner::Executor do
   it "runs a simple command" do
     workload = Workload.from_config(
       WorkloadConfig.from_yaml(<<-YAML),
-      name: echo
-      command: #{ECHO + ["hello world"]}
-      YAML
+        name: echo
+        command: #{ECHO + ["hello world"]}
+        YAML
       30
     )
 
@@ -36,17 +36,17 @@ describe CommandRunner::Executor do
     result.exit_code.should eq(0)
     result.stdout.strip.should eq("hello world")
     result.stderr.should be_empty
-    result.truncated.should be_false
-    result.timed_out.should be_false
+    result.truncated?.should be_false
+    result.timed_out?.should be_false
     result.duration_us.should be >= 0
   end
 
   it "captures nonzero exit codes" do
     workload = Workload.from_config(
       WorkloadConfig.from_yaml(<<-YAML),
-      name: fail
-      command: #{SH + ["exit 7"]}
-      YAML
+        name: fail
+        command: #{SH + ["exit 7"]}
+        YAML
       30
     )
 
@@ -57,9 +57,9 @@ describe CommandRunner::Executor do
   it "captures stderr separately" do
     workload = Workload.from_config(
       WorkloadConfig.from_yaml(<<-YAML),
-      name: stderr_test
-      command: #{STDERR_CMD}
-      YAML
+        name: stderr_test
+        command: #{STDERR_CMD}
+        YAML
       30
     )
 
@@ -71,12 +71,12 @@ describe CommandRunner::Executor do
   it "substitutes params" do
     workload = Workload.from_config(
       WorkloadConfig.from_yaml(<<-YAML),
-      name: echo_param
-      command: #{ECHO + ["{msg}"]}
-      params:
-        - name: msg
-          required: true
-      YAML
+        name: echo_param
+        command: #{ECHO + ["{msg}"]}
+        params:
+          - name: msg
+            required: true
+        YAML
       30
     )
 
@@ -87,42 +87,42 @@ describe CommandRunner::Executor do
   it "kills on timeout" do
     workload = Workload.from_config(
       WorkloadConfig.from_yaml(<<-YAML),
-      name: slow
-      command: #{SLEEP + ["30"]}
-      timeout: 1
-      YAML
+        name: slow
+        command: #{SLEEP + ["30"]}
+        timeout: 1
+        YAML
       30
     )
 
     result = executor.run(workload, {} of String => String)
-    result.timed_out.should be_true
+    result.timed_out?.should be_true
     result.duration_us.should be < 5000000
   end
 
   it "truncates large output" do
     workload = Workload.from_config(
       WorkloadConfig.from_yaml(<<-YAML),
-      name: verbose
-      command: #{BIG_OUT}
-      YAML
+        name: verbose
+        command: #{BIG_OUT}
+        YAML
       30
     )
 
     small_executor = Executor.new(100)
     result = small_executor.run(workload, {} of String => String)
-    result.truncated.should be_true
+    result.truncated?.should be_true
     result.stdout.bytesize.should eq(100)
   end
 
   it "raises on missing required param" do
     workload = Workload.from_config(
       WorkloadConfig.from_yaml(<<-YAML),
-      name: needs_param
-      command: #{ECHO + ["{val}"]}
-      params:
-        - name: val
-          required: true
-      YAML
+        name: needs_param
+        command: #{ECHO + ["{val}"]}
+        params:
+          - name: val
+            required: true
+        YAML
       30
     )
 
@@ -134,9 +134,9 @@ describe CommandRunner::Executor do
   it "raises on unknown param" do
     workload = Workload.from_config(
       WorkloadConfig.from_yaml(<<-YAML),
-      name: no_params
-      command: #{TRUE}
-      YAML
+        name: no_params
+        command: #{TRUE}
+        YAML
       30
     )
 
