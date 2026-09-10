@@ -24,8 +24,8 @@ flowchart TB
     AgentA["Agent (node A)<br/>poll tasks.A · execute · publish"]
     AgentB["Agent (node B)<br/>poll tasks.B · execute · publish"]
 
-    MQ -->|"AMQP (TLS)"| AgentA
-    MQ -->|"AMQP (TLS)"| AgentB
+    MQ -->|"AMQPS (mTLS)"| AgentA
+    MQ -->|"AMQPS (mTLS)"| AgentB
     AgentA -->|"publish result"| MQ
     AgentB -->|"publish result"| MQ
 ```
@@ -38,7 +38,9 @@ flowchart TB
   queue every N seconds, executes the requested workload using local
   definitions, and publishes the result to the `results` queue.
 - **LavinMQ**: AMQP 0-9-1 message broker. Tasks are routed to per-agent queues
-  so each agent only receives tasks addressed to it.
+  so each agent only receives tasks addressed to it. AMQP connections are
+  secured with mutual TLS — each agent and the server present a client
+  certificate signed by the shared CA.
 - **PostgreSQL**: Stores submitted tasks and their results. The server runs
   automatic migrations on startup.
 
@@ -52,8 +54,9 @@ The fastest way to get everything running:
 ./scripts/dev-up.sh
 ```
 
-This generates dev certs, builds the Docker images, and starts LavinMQ,
-PostgreSQL, the central server, and one agent. When done:
+This generates dev certs (including per-agent AMQP mTLS certs), builds the
+Docker images, and starts LavinMQ, PostgreSQL, the central server, and one
+agent. When done:
 
 ```sh
 ./scripts/dev-down.sh
@@ -68,14 +71,15 @@ docker compose up -d lavinmq postgres
 ```
 
 Services will be available on:
-- LavinMQ AMQP: `localhost:5672`
+- LavinMQ AMQP: `localhost:5672` (plaintext) and `localhost:5671` (TLS/mTLS)
 - LavinMQ Management UI: `http://localhost:15672` (guest/guest)
 - PostgreSQL: `localhost:5432`
 
-#### 2. Generate dev certs (for central server mTLS)
+#### 2. Generate dev certs
 
 ```sh
-./certs/generate.sh
+./certs/generate.sh              # CA, HTTP server/client, AMQP server, LavinMQ
+./certs/generate-agent.sh agent-01   # Per-agent AMQP mTLS cert
 ```
 
 #### 3. Copy and edit configs
@@ -178,6 +182,10 @@ params, returns up to `results_limit` results (from server config).
 
 - **mTLS enforced on central server**: only clients presenting a certificate
   signed by the trusted CA can submit tasks.
+- **mTLS enforced on AMQP broker**: both the central server and each agent
+  present a client certificate when connecting to LavinMQ. The broker
+  rejects any connection without a CA-signed cert. Each agent has its own
+  keypair (`certs/{agent_id}.crt`/`.key`) with `CN={agent_id}`.
 - **Client allowlist**: the server only accepts tasks from CNs listed in
   `allowed_clients`.
 - **Per-workload client restrictions**: each workload can optionally restrict
@@ -200,11 +208,13 @@ params, returns up to `results_limit` results (from server config).
 agent_id: "server-01"
 
 amqp:
-  url: "amqp://agent:secretpass@localhost:5672"
+  url: "amqps://agent:secretpass@localhost:5671"
   task_queue: "tasks"
   result_queue: "results"
   poll_interval: 5
-  ca: certs/ca.crt  # for amqps:// TLS verification
+  ca: certs/ca.crt              # CA cert to verify the broker
+  cert: certs/agent-01.crt      # per-agent client cert (CN must match agent_id)
+  key: certs/agent-01.key       # per-agent private key
 
 limits:
   output_bytes: 1048576
@@ -257,9 +267,12 @@ tls:
   ca: certs/ca.crt
 
 amqp:
-  url: "amqp://server:secretpass@localhost:5672"
+  url: "amqps://server:secretpass@localhost:5671"
   task_queue: "tasks"
   result_queue: "results"
+  ca: certs/ca.crt              # CA cert to verify the broker
+  cert: certs/amqp-server.crt   # server's AMQP client cert
+  key: certs/amqp-server.key    # server's AMQP private key
 
 allowed_clients:
   - ci-bot
@@ -279,7 +292,7 @@ results:
 src/
   command_runner.cr       # Shared: module, error types, log
   config.cr               # Shared: AgentConfig, ServerConfig, AmqpConfig, etc.
-  tls.cr                  # Shared: TLS context builders (server + client)
+  tls.cr                  # Shared: TLS context builders (server + client mTLS)
   task.cr                 # Shared: Task, TaskResult, TaskReceipt structs
   amqp.cr                 # Shared: AmqpClient wrapper (per-agent queue routing)
   agent/
@@ -298,6 +311,9 @@ scripts/
   dev-up.sh               # Generate certs, build, and start all Docker services
   dev-down.sh             # Stop Docker containers
   stress-test.sh          # Launch N agents and submit tasks, report throughput
+certs/
+  generate.sh             # Generate CA, HTTP server/client, AMQP server, LavinMQ certs
+  generate-agent.sh       # Generate per-agent AMQP mTLS cert (CN=<agent_id>)
 ```
 
 ## Scripts
@@ -307,6 +323,8 @@ scripts/
 | `dev-up.sh`        | Generates dev certs, builds images, starts all services via Docker |
 | `dev-down.sh`      | Stops Docker containers (pass `-v` to also remove data volumes)    |
 | `stress-test.sh`   | Launches N local agents (default 100), submits tasks, and reports throughput and success rate. Usage: `./scripts/stress-test.sh [num_agents] [tasks_per_agent]` |
+| `certs/generate.sh`        | Generates CA, HTTP server/client, AMQP server, and LavinMQ TLS certs |
+| `certs/generate-agent.sh`  | Generates a per-agent AMQP mTLS client cert. Usage: `./certs/generate-agent.sh <agent_id>` |
 
 ## systemd services
 
