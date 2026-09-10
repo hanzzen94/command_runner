@@ -8,9 +8,14 @@ if ! docker compose version &>/dev/null; then
   exit 1
 fi
 
-if [ ! -f certs/ca.crt ]; then
+if [ ! -f certs/ca.crt ] || [ ! -f certs/lavinmq.crt ]; then
   echo "==> Generating dev certificates..."
   ./certs/generate.sh
+fi
+
+if [ ! -f certs/agent-01.crt ]; then
+  echo "==> Generating per-agent AMQP certificate for agent-01..."
+  ./certs/generate-agent.sh agent-01
 fi
 
 echo "==> Writing Docker configs..."
@@ -23,9 +28,12 @@ tls:
   ca: /app/certs/ca.crt
 
 amqp:
-  url: "amqp://guest:guest@lavinmq:5672"
+  url: "amqps://guest:guest@lavinmq:5671"
   task_queue: "tasks"
   result_queue: "results"
+  ca: /app/certs/ca.crt
+  cert: /app/certs/amqp-server.crt
+  key: /app/certs/amqp-server.key
 
 allowed_clients:
   - ci-bot
@@ -43,10 +51,13 @@ cat > config.agent.docker.yml <<'YAML'
 agent_id: "agent-01"
 
 amqp:
-  url: "amqp://guest:guest@lavinmq:5672"
+  url: "amqps://guest:guest@lavinmq:5671"
   task_queue: "tasks"
   result_queue: "results"
   poll_interval: 3
+  ca: /app/certs/ca.crt
+  cert: /app/certs/agent-01.crt
+  key: /app/certs/agent-01.key
 
 limits:
   output_bytes: 1048576

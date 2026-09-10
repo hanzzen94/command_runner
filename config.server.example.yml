@@ -10,7 +10,10 @@ amqp:
   task_queue: "tasks"
   result_queue: "results"
   poll_interval: 5
-  # ca: certs/ca.crt  # uncomment for amqps:// TLS verification
+  # For TLS with mTLS (amqps://), uncomment and set the following:
+  # ca: certs/ca.crt          # CA cert to verify the broker
+  # cert: certs/amqp-server.crt  # client cert for mTLS authentication
+  # key: certs/amqp-server.key   # private key for mTLS authentication
 
 allowed_clients:
   - ci-bot

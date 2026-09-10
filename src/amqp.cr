@@ -1,32 +1,44 @@
 require "amqp-client"
 require "openssl"
+require "uri"
 require "./tls"
 
 module CommandRunner
   class AmqpClient
     @connection : AMQP::Client::Connection?
     @tls_context : OpenSSL::SSL::Context::Client?
+    @host : String
+    @port : Int32
+    @vhost : String
+    @user : String
+    @password : String
 
     getter task_queue_prefix : String
     getter result_queue : String
 
     def initialize(config : AmqpConfig, @agent_id : String? = nil)
-      @url = config.url
       @task_queue_prefix = config.task_queue
       @result_queue = config.result_queue
       @poll_interval = config.poll_interval.seconds
 
+      uri = URI.parse(config.url)
+      @host = uri.hostname.to_s.empty? ? "localhost" : uri.hostname.to_s
+      @port = uri.port || (uri.scheme == "amqps" ? 5671 : 5672)
+      @vhost = uri.path.bytesize > 1 ? URI.decode_www_form(uri.path[1..-1]) : "/"
+      @user = uri.user || "guest"
+      @password = uri.password || "guest"
+
       if config.ca
-        @tls_context = TLS.build_client_context(config.ca.not_nil!)
+        @tls_context = TLS.build_client_context(config.ca.not_nil!, cert: config.cert, key: config.key)
       end
     end
 
     def connect : Nil
       tls = @tls_context
       if tls
-        @connection = AMQP::Client.new(@url, tls: tls).connect
+        @connection = AMQP::Client.new(@host, @port, @vhost, @user, @password, tls).connect
       else
-        @connection = AMQP::Client.new(@url).connect
+        @connection = AMQP::Client.new(@host, @port, @vhost, @user, @password).connect
       end
 
       @connection.not_nil!.on_disconnect do |ex|

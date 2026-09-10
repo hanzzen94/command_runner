@@ -149,7 +149,18 @@ module CommandRunner
 
     def initialize(@config : ServerConfig)
       @amqp = AmqpClient.new(@config.amqp)
-      @db = Database.new(@config.results)
+      @db = init_database(@config.results)
+    end
+
+    private def init_database(config : DatabaseConfig) : Database
+      loop do
+        begin
+          return Database.new(config)
+        rescue ex : Exception
+          Log.error { "Database connection failed: #{ex.message}, retrying in 5s..." }
+          sleep 5.seconds
+        end
+      end
     end
 
     def start : Nil

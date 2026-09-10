@@ -19,7 +19,7 @@ module CommandRunner
       context
     end
 
-    def self.build_client_context(ca_path : String) : OpenSSL::SSL::Context::Client
+    def self.build_client_context(ca_path : String, cert : String? = nil, key : String? = nil) : OpenSSL::SSL::Context::Client
       context = OpenSSL::SSL::Context::Client.new
 
       unless File.exists?(ca_path)
@@ -29,6 +29,17 @@ module CommandRunner
       context.ca_certificates = ca_path
       context.verify_mode = OpenSSL::SSL::VerifyMode::PEER
       context.security_level = 2
+
+      if cert && key
+        unless File.exists?(cert)
+          raise Error.new("Client certificate not found: #{cert}")
+        end
+        unless File.exists?(key)
+          raise Error.new("Client private key not found: #{key}")
+        end
+        context.certificate_chain = cert
+        context.private_key = key
+      end
 
       context
     end

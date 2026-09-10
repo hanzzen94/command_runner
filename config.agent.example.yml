@@ -5,7 +5,11 @@ amqp:
   task_queue: "tasks"
   result_queue: "results"
   poll_interval: 5
-  # ca: certs/ca.crt  # uncomment for amqps:// TLS verification
+  # For TLS with mTLS (amqps://), uncomment and set the following:
+  # ca: certs/ca.crt            # CA cert to verify the broker
+  # cert: certs/agent-01.crt    # per-agent client cert (CN must match agent_id)
+  # key: certs/agent-01.key     # per-agent private key
+  # Generate per-agent certs with: ./certs/generate-agent.sh <agent_id>
 
 limits:
   output_bytes: 1048576

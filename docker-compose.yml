@@ -1,11 +1,20 @@
 services:
   lavinmq:
     image: "cloudamqp/lavinmq:latest"
+    command: ["-c", "/etc/lavinmq/lavinmq.ini"]
     ports:
+      - "5671:5671"
       - "5672:5672"
       - "15672:15672"
     volumes:
       - lavinmq_data:/var/lib/lavinmq
+      - ./lavinmq.ini:/etc/lavinmq/lavinmq.ini:ro
+      - ./certs:/etc/lavinmq/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "lavinmqctl status 2>/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   postgres:
     image: "postgres:16-bookworm"
@@ -17,6 +26,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U command_runner"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   central_server:
     build: .
@@ -27,17 +41,21 @@ services:
       - ./certs:/app/certs:ro
       - ./config.server.docker.yml:/app/config.server.yml:ro
     depends_on:
-      - lavinmq
-      - postgres
+      lavinmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     restart: on-failure
 
   agent:
     build: .
     command: ["./bin/command_runner", "--config", "/app/config.agent.yml"]
     volumes:
+      - ./certs:/app/certs:ro
       - ./config.agent.docker.yml:/app/config.agent.yml:ro
     depends_on:
-      - lavinmq
+      lavinmq:
+        condition: service_healthy
     restart: on-failure
 
 volumes:

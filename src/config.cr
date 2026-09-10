@@ -9,6 +9,8 @@ module CommandRunner
     getter result_queue : String = "results"
     getter poll_interval : Int32 = 5
     getter ca : String? = nil
+    getter cert : String? = nil
+    getter key : String? = nil
 
     def self.load(path : String) : self
       from_yaml(File.read(path))
