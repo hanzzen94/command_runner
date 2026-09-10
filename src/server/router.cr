@@ -6,7 +6,8 @@ module CommandRunner
   struct TaskRequest
     include JSON::Serializable
 
-    getter agent_id : String
+    getter server_cloud_id : String
+    getter customer_id : String
     getter workload : String
     getter params : Hash(String, String) = {} of String => String
   end
@@ -52,8 +53,11 @@ module CommandRunner
         raise ValidationError.new("invalid JSON: #{ex.message}")
       end
 
+      validate_guid(request.server_cloud_id, "server_cloud_id")
+      validate_guid(request.customer_id, "customer_id")
+
       cn = context.client_cn || "unknown"
-      task = Task.new(request.agent_id, request.workload, request.params, cn)
+      task = Task.new(request.server_cloud_id, request.customer_id, request.workload, request.params, cn)
 
       published = @amqp.publish_task(task)
 
@@ -66,9 +70,9 @@ module CommandRunner
 
       @db.store_task(task)
 
-      receipt = TaskReceipt.new(task.task_id, "queued")
+      receipt = TaskReceipt.new(task.task_id, "queued", task.customer_id)
 
-      Log.info { "task submitted: #{task.task_id} agent=#{task.agent_id} workload=#{task.workload} by=#{cn}" }
+      Log.info { "task submitted: #{task.task_id} server_cloud_id=#{task.server_cloud_id} customer_id=#{task.customer_id} workload=#{task.workload} by=#{cn}" }
 
       context.response.status_code = 201
       context.response.content_type = "application/json"
@@ -79,8 +83,13 @@ module CommandRunner
       params = context.request.query_params
       limit = params["limit"]?.try(&.to_i?) || nil
       offset = params["offset"]?.try(&.to_i?) || 0
+      customer_id = params["customer_id"]?
 
-      results = @db.list_results(limit: limit, offset: offset)
+      if customer_id
+        validate_guid(customer_id, "customer_id")
+      end
+
+      results = @db.list_results(limit: limit, offset: offset, customer_id: customer_id)
       context.response.content_type = "application/json"
       context.response.print(results.to_json)
     end
@@ -97,6 +106,12 @@ module CommandRunner
 
       context.response.content_type = "application/json"
       context.response.print(result.to_json)
+    end
+
+    private def validate_guid(value : String, field : String) : Nil
+      unless value.matches?(GUID_PATTERN)
+        raise ValidationError.new("#{field} must be a valid GUID")
+      end
     end
 
     private def respond_not_found(context : HTTP::Server::Context) : Nil

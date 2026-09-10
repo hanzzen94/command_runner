@@ -1,15 +1,18 @@
-agent_id: "server-01"
+server_cloud_id: "550e8400-e29b-41d4-a716-446655440000"
 
 amqp:
-  url: "amqp://agent:secretpass@localhost:5672"
+  url: "amqps://CHANGE_ME:CHANGE_ME@localhost:5671"
+  # Run ./scripts/setup-lavinmq-users.sh <server_cloud_id> to create the LavinMQ user
+  # and get the generated amqps:// URL with credentials. Paste it here.
+  # The username must match the server_cloud_id (and the certificate CN).
   task_queue: "tasks"
   result_queue: "results"
   poll_interval: 5
   # For TLS with mTLS (amqps://), uncomment and set the following:
   # ca: certs/ca.crt            # CA cert to verify the broker
-  # cert: certs/agent-01.crt    # per-agent client cert (CN must match agent_id)
-  # key: certs/agent-01.key     # per-agent private key
-  # Generate per-agent certs with: ./certs/generate-agent.sh <agent_id>
+  # cert: certs/550e8400-e29b-41d4-a716-446655440000.crt  # per-agent client cert (CN must match server_cloud_id)
+  # key: certs/550e8400-e29b-41d4-a716-446655440000.key   # per-agent private key
+  # Generate per-agent certs with: ./certs/generate-agent.sh <server_cloud_id>
 
 limits:
   output_bytes: 1048576

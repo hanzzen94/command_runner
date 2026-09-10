@@ -13,13 +13,41 @@ if [ ! -f certs/ca.crt ] || [ ! -f certs/lavinmq.crt ]; then
   ./certs/generate.sh
 fi
 
-if [ ! -f certs/agent-01.crt ]; then
-  echo "==> Generating per-agent AMQP certificate for agent-01..."
-  ./certs/generate-agent.sh agent-01
+if [ -f .dev-agent-guid ]; then
+  AGENT_GUID=$(cat .dev-agent-guid)
+  echo "==> Using existing agent GUID: ${AGENT_GUID}"
+else
+  AGENT_GUID=$(cat /proc/sys/kernel/random/uuid)
+  echo "==> Generating per-agent AMQP certificate for ${AGENT_GUID}..."
+  ./certs/generate-agent.sh "$AGENT_GUID"
+  echo "$AGENT_GUID" > .dev-agent-guid
 fi
 
+echo "==> Starting LavinMQ (for user creation)..."
+docker compose up -d lavinmq
+
+echo "==> Waiting for LavinMQ to be healthy..."
+for i in $(seq 1 30); do
+  if docker compose exec -T lavinmq lavinmqctl status >/dev/null 2>&1; then
+    echo "    ready"
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "    timeout — check: docker compose logs lavinmq" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+echo "==> Creating LavinMQ users with per-agent credentials..."
+LAVINMQ_HOST=localhost LAVINMQ_AMQP_HOST=lavinmq \
+  ./scripts/setup-lavinmq-users.sh "$AGENT_GUID" > /tmp/lavinmq-creds
+SERVER_AMQP_URL="$(sed -n '1p' /tmp/lavinmq-creds)"
+AGENT_AMQP_URL="$(sed -n '2p' /tmp/lavinmq-creds)"
+rm -f /tmp/lavinmq-creds
+
 echo "==> Writing Docker configs..."
-cat > config.server.docker.yml <<'YAML'
+cat > config.server.docker.yml <<YAML
 listen: "0.0.0.0:8443"
 
 tls:
@@ -28,7 +56,7 @@ tls:
   ca: /app/certs/ca.crt
 
 amqp:
-  url: "amqps://guest:guest@lavinmq:5671"
+  url: "${SERVER_AMQP_URL}"
   task_queue: "tasks"
   result_queue: "results"
   ca: /app/certs/ca.crt
@@ -47,17 +75,17 @@ results:
   results_limit: 100
 YAML
 
-cat > config.agent.docker.yml <<'YAML'
-agent_id: "agent-01"
+cat > config.agent.docker.yml <<YAML
+server_cloud_id: "${AGENT_GUID}"
 
 amqp:
-  url: "amqps://guest:guest@lavinmq:5671"
+  url: "${AGENT_AMQP_URL}"
   task_queue: "tasks"
   result_queue: "results"
   poll_interval: 3
   ca: /app/certs/ca.crt
-  cert: /app/certs/agent-01.crt
-  key: /app/certs/agent-01.key
+  cert: /app/certs/${AGENT_GUID}.crt
+  key: /app/certs/${AGENT_GUID}.key
 
 limits:
   output_bytes: 1048576
@@ -77,7 +105,7 @@ workloads:
     timeout: 10
 YAML
 
-echo "==> Building and starting containers..."
+echo "==> Building and starting remaining containers..."
 docker compose up -d --build
 
 echo "==> Waiting for central server..."
@@ -96,14 +124,15 @@ done
 
 echo ""
 echo "==> All services running:"
-echo "    LavinMQ:         http://localhost:15672 (guest/guest)"
+echo "    LavinMQ:         http://localhost:15672 (guest/guest, loopback only)"
 echo "    Central server:  https://localhost:8443"
+echo "    AMQP auth:       per-agent users with unique passwords + mTLS"
 echo ""
-echo "    Submit a task:"
-echo "      curl --cacert certs/ca.crt --cert certs/client.crt --key certs/client.key \\"
-echo "        -X POST https://localhost:8443/tasks \\"
-echo "        -H 'Content-Type: application/json' \\"
-echo "        -d '{\"agent_id\":\"agent-01\",\"workload\":\"echo\",\"params\":{\"message\":\"hello\"}}'"
+  echo "    Submit a task:"
+  echo "      curl --cacert certs/ca.crt --cert certs/client.crt --key certs/client.key \\"
+  echo "        -X POST https://localhost:8443/tasks \\"
+  echo "        -H 'Content-Type: application/json' \\"
+  echo "        -d '{\"server_cloud_id\":\"${AGENT_GUID}\",\"customer_id\":\"$(cat /proc/sys/kernel/random/uuid)\",\"workload\":\"echo\",\"params\":{\"message\":\"hello\"}}'"
 echo ""
 echo "    View results:"
 echo "      curl --cacert certs/ca.crt --cert certs/client.crt --key certs/client.key \\"

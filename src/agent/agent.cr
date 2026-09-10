@@ -8,23 +8,23 @@ module CommandRunner
   class Agent
     @running = false
 
-    getter agent_id : String
+    getter server_cloud_id : String
     getter registry : WorkloadRegistry
     getter executor : Executor
     getter amqp : AmqpClient
 
     def initialize(config : AgentConfig)
-      @agent_id = config.agent_id
+      @server_cloud_id = config.server_cloud_id
       @registry = WorkloadRegistry.new(config.workloads, config.limits.default_timeout)
       @executor = Executor.new(config.limits.output_bytes)
-      @amqp = AmqpClient.new(config.amqp, agent_id: config.agent_id)
+      @amqp = AmqpClient.new(config.amqp, server_cloud_id: config.server_cloud_id)
     end
 
     def start : Nil
       @running = true
       connect_with_retry
 
-      Log.info { "agent #{@agent_id} started, #{@registry.size} workloads registered" }
+      Log.info { "agent #{@server_cloud_id} started, #{@registry.size} workloads registered" }
       Log.info { "polling every #{@amqp.poll_interval.total_seconds}s" }
 
       while @running
@@ -38,7 +38,7 @@ module CommandRunner
         end
       end
 
-      Log.info { "agent #{@agent_id} shutting down" }
+      Log.info { "agent #{@server_cloud_id} shutting down" }
       @amqp.close
     end
 
@@ -85,18 +85,18 @@ module CommandRunner
 
       unless workload
         Log.warn { "unknown workload: #{task.workload}" }
-        return TaskResult.error(task.task_id, @agent_id, "unknown workload: #{task.workload}")
+        return TaskResult.error(task.task_id, @server_cloud_id, task.customer_id, "unknown workload: #{task.workload}")
       end
 
       begin
         execution = @executor.run(workload, task.params)
-        TaskResult.from_execution(task.task_id, @agent_id, execution)
+        TaskResult.from_execution(task.task_id, @server_cloud_id, task.customer_id, execution)
       rescue ex : ValidationError
         Log.warn { "validation error for task #{task.task_id}: #{ex.message}" }
-        TaskResult.error(task.task_id, @agent_id, ex.message || "validation error")
+        TaskResult.error(task.task_id, @server_cloud_id, task.customer_id, ex.message || "validation error")
       rescue ex : Exception
         Log.error { "execution error for task #{task.task_id}: #{ex.class}: #{ex.message}" }
-        TaskResult.error(task.task_id, @agent_id, "execution error: #{ex.message}")
+        TaskResult.error(task.task_id, @server_cloud_id, task.customer_id, "execution error: #{ex.message}")
       end
     end
   end

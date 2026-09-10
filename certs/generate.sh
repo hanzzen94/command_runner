@@ -7,7 +7,7 @@ set -euo pipefail
 # Default client CN: ci-bot
 #
 # To generate per-agent AMQP client certs, use:
-#   ./certs/generate-agent.sh <agent_id>
+#   ./certs/generate-agent.sh <server_cloud_id>
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 CLIENT_CN="${1:-ci-bot}"
@@ -100,7 +100,7 @@ echo "  AMQP Server:  $DIR/amqp-server.crt / $DIR/amqp-server.key"
 echo "  LavinMQ:      $DIR/lavinmq.crt / $DIR/lavinmq.key"
 echo ""
 echo "Per-agent AMQP certs (run separately):"
-echo "  ./certs/generate-agent.sh <agent_id>"
+echo "  ./certs/generate-agent.sh <server_cloud_id>"
 echo ""
 echo "Test with curl:"
 echo "  curl --cacert $DIR/ca.crt --cert $DIR/client.crt --key $DIR/client.key \\"

@@ -6,7 +6,9 @@ tls:
   ca: certs/ca.crt
 
 amqp:
-  url: "amqp://server:secretpass@localhost:5672"
+  url: "amqps://CHANGE_ME:CHANGE_ME@localhost:5671"
+  # Run ./scripts/setup-lavinmq-users.sh <server_cloud_id> to create the amqp-server
+  # user and get the generated amqps:// URL with credentials. Paste it here.
   task_queue: "tasks"
   result_queue: "results"
   poll_interval: 5

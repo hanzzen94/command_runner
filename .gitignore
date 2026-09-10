@@ -9,6 +9,7 @@ config.agent.yml
 config.server.yml
 config.server.docker.yml
 config.agent.docker.yml
+.dev-agent-guid
 certs/*.key
 certs/*.crt
 certs/*.srl

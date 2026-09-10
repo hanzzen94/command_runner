@@ -2,19 +2,37 @@
 set -euo pipefail
 
 # Generates a per-agent AMQP client certificate signed by the dev CA.
-# The certificate CN matches the agent_id, enabling per-agent identity
+# The certificate CN matches the server_cloud_id, enabling per-agent identity
 # via mTLS when connecting to LavinMQ.
 #
-# Usage: ./certs/generate-agent.sh <agent_id>
-# Example: ./certs/generate-agent.sh agent-01
+# With --create-user, also creates a matching LavinMQ user with a unique
+# random password and restrictive permissions. Requires LavinMQ to be
+# running and reachable on the management API.
+#
+# Usage: ./certs/generate-agent.sh <server_cloud_id> [--create-user]
+# Example: ./certs/generate-agent.sh 550e8400-e29b-41d4-a716-446655440000
+# Example: ./certs/generate-agent.sh 550e8400-e29b-41d4-a716-446655440000 --create-user
+
+CREATE_USER=false
 
 if [ $# -lt 1 ]; then
-  echo "Usage: $0 <agent_id>" >&2
-  echo "  Example: $0 agent-01" >&2
+  echo "Usage: $0 <server_cloud_id> [--create-user]" >&2
+  echo "  Example: $0 550e8400-e29b-41d4-a716-446655440000" >&2
+  echo "  Example: $0 550e8400-e29b-41d4-a716-446655440000 --create-user" >&2
   exit 1
 fi
 
 AGENT_ID="$1"
+shift
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --create-user) CREATE_USER=true ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+  shift
+done
+
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if [ ! -f "$DIR/ca.key" ] || [ ! -f "$DIR/ca.crt" ]; then
@@ -49,3 +67,17 @@ echo "Use in agent config:"
 echo "  amqp:"
 echo "    cert: certs/${AGENT_ID}.crt"
 echo "    key:  certs/${AGENT_ID}.key"
+
+if [ "$CREATE_USER" = true ]; then
+  echo ""
+  SCRIPTS_DIR="$(cd "$(dirname "$0")/../scripts" && pwd)"
+  echo "==> Creating LavinMQ user for '${AGENT_ID}'..."
+  AMQP_URL="$("$SCRIPTS_DIR/setup-lavinmq-users.sh" --agents-only "$AGENT_ID" | tail -1)"
+  echo "  AMQP URL: ${AMQP_URL}"
+  echo ""
+  echo "Full agent amqp config:"
+  echo "  amqp:"
+  echo "    url: \"${AMQP_URL}\""
+  echo "    cert: certs/${AGENT_ID}.crt"
+  echo "    key:  certs/${AGENT_ID}.key"
+fi

@@ -4,7 +4,7 @@
 # Default client CN: ci-bot
 #
 # To generate per-agent AMQP client certs, use:
-#   .\certs\generate-agent.ps1 <agent_id>
+#   .\certs\generate-agent.ps1 <server_cloud_id>
 #
 # Requires OpenSSL installed and available in PATH.
 # Install via:  choco install openssl  or  scoop install openssl
@@ -104,7 +104,7 @@ Write-Host "  AMQP Server:  $Dir\amqp-server.crt / $Dir\amqp-server.key"
 Write-Host "  LavinMQ:      $Dir\lavinmq.crt / $Dir\lavinmq.key"
 Write-Host ""
 Write-Host "Per-agent AMQP certs (run separately):"
-Write-Host "  .\certs\generate-agent.ps1 <agent_id>"
+Write-Host "  .\certs\generate-agent.ps1 <server_cloud_id>"
 Write-Host ""
 Write-Host "Test with curl:"
 Write-Host "  curl --cacert $Dir\ca.crt --cert $Dir\client.crt --key $Dir\client.key ``"

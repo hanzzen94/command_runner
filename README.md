@@ -32,9 +32,9 @@ flowchart TB
 
 - **Central server** (`central_server` binary): mTLS-secured HTTP API that
   accepts task submissions and publishes them to a per-agent LavinMQ queue
-  (`tasks.{agent_id}`). Consumes results from a shared `results` queue and
-  stores tasks and results in PostgreSQL.
-- **Agent** (`command_runner` binary): Polls its dedicated `tasks.{agent_id}`
+  (`tasks.{server_cloud_id}`). Consumes results from a shared `results` queue
+  and stores tasks and results in PostgreSQL.
+- **Agent** (`command_runner` binary): Polls its dedicated `tasks.{server_cloud_id}`
   queue every N seconds, executes the requested workload using local
   definitions, and publishes the result to the `results` queue.
 - **LavinMQ**: AMQP 0-9-1 message broker. Tasks are routed to per-agent queues
@@ -54,9 +54,9 @@ The fastest way to get everything running:
 ./scripts/dev-up.sh
 ```
 
-This generates dev certs (including per-agent AMQP mTLS certs), builds the
-Docker images, and starts LavinMQ, PostgreSQL, the central server, and one
-agent. When done:
+This generates dev certs (including per-agent AMQP mTLS certs), creates
+per-agent LavinMQ users with unique passwords, builds the Docker images,
+and starts LavinMQ, PostgreSQL, the central server, and one agent. When done:
 
 ```sh
 ./scripts/dev-down.sh
@@ -72,43 +72,55 @@ docker compose up -d lavinmq postgres
 
 Services will be available on:
 - LavinMQ AMQP: `localhost:5672` (plaintext) and `localhost:5671` (TLS/mTLS)
-- LavinMQ Management UI: `http://localhost:15672` (guest/guest)
+- LavinMQ Management UI: `http://localhost:15672` (guest/guest, loopback only)
 - PostgreSQL: `localhost:5432`
 
 #### 2. Generate dev certs
 
 ```sh
 ./certs/generate.sh              # CA, HTTP server/client, AMQP server, LavinMQ
-./certs/generate-agent.sh agent-01   # Per-agent AMQP mTLS cert
+./certs/generate-agent.sh 550e8400-e29b-41d4-a716-446655440000   # Per-agent AMQP mTLS cert
 ```
 
-#### 3. Copy and edit configs
+#### 3. Create LavinMQ users
+
+```sh
+./scripts/setup-lavinmq-users.sh 550e8400-e29b-41d4-a716-446655440000
+```
+
+This creates the `amqp-server` and `550e8400-e29b-41d4-a716-446655440000` LavinMQ users with unique
+random passwords and restrictive permissions. The script prints `amqps://`
+URLs with credentials to stdout — use these in the config files below.
+
+#### 4. Copy and edit configs
 
 ```sh
 cp config.agent.example.yml config.agent.yml
 cp config.server.example.yml config.server.yml
 ```
 
-#### 4. Build both binaries
+Paste the generated `amqps://` URLs into the `amqp.url` fields.
+
+#### 5. Build both binaries
 
 ```sh
 crystal build src/agent/main.cr -o bin/command_runner
 crystal build src/server/main.cr -o bin/central_server
 ```
 
-#### 5. Start the central server
+#### 6. Start the central server
 
 ```sh
 ./bin/central_server --config config.server.yml
 ```
 
-#### 6. Start an agent
+#### 7. Start an agent
 
 ```sh
 ./bin/command_runner --config config.agent.yml
 ```
 
-#### 7. Submit a task
+#### 8. Submit a task
 
 ```sh
 curl --cacert certs/ca.crt \
@@ -116,15 +128,15 @@ curl --cacert certs/ca.crt \
      --key certs/client.key \
      -X POST https://localhost:8443/tasks \
      -H 'Content-Type: application/json' \
-     -d '{"agent_id":"server-01","workload":"echo","params":{"message":"hello"}}'
+     -d '{"server_cloud_id":"550e8400-e29b-41d4-a716-446655440000","customer_id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","workload":"echo","params":{"message":"hello"}}'
 ```
 
 Response (HTTP 201):
 ```json
-{"task_id":"...","status":"queued"}
+{"task_id":"...","status":"queued","customer_id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890"}
 ```
 
-#### 8. Check results
+#### 9. Check results
 
 ```sh
 curl --cacert certs/ca.crt \
@@ -140,7 +152,7 @@ All endpoints require a client certificate signed by the configured CA.
 | Method | Path                  | Description                          |
 |--------|-----------------------|--------------------------------------|
 | POST   | `/tasks`              | Submit a task for execution          |
-| GET    | `/results`            | List recent results (`limit`, `offset` query params) |
+| GET    | `/results`            | List recent results (`limit`, `offset`, `customer_id` query params) |
 | GET    | `/results/:task_id`   | Get a specific result                |
 | GET    | `/health`             | Health check                         |
 
@@ -152,16 +164,17 @@ curl --cacert certs/ca.crt \
      --key certs/client.key \
      -X POST https://localhost:8443/tasks \
      -H 'Content-Type: application/json' \
-     -d '{"agent_id":"server-01","workload":"chef_client","params":{"recipe":"cookbook::default"}}'
+     -d '{"server_cloud_id":"550e8400-e29b-41d4-a716-446655440000","customer_id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","workload":"chef_client","params":{"recipe":"cookbook::default"}}'
 ```
 
 The request body must include:
 
-| Field      | Type                    | Description                                      |
-|------------|-------------------------|--------------------------------------------------|
-| `agent_id` | string                  | Target agent (routes to `tasks.{agent_id}` queue) |
-| `workload` | string                  | Must match a workload defined in the agent's config |
-| `params`   | object (string→string)  | Parameters for the workload                       |
+| Field              | Type                    | Description                                      |
+|--------------------|-------------------------|--------------------------------------------------|
+| `server_cloud_id`  | string (GUID)           | Target agent (routes to `tasks.{server_cloud_id}` queue) |
+| `customer_id`      | string (GUID)           | Customer GUID for tracking/auditing              |
+| `workload`         | string                  | Must match a workload defined in the agent's config |
+| `params`           | object (string→string)  | Parameters for the workload                       |
 
 The central server does not know what workloads exist — it simply forwards
 the task to the queue for the specified agent.
@@ -172,11 +185,20 @@ the task to the queue for the specified agent.
 curl --cacert certs/ca.crt \
      --cert certs/client.crt \
      --key certs/client.key \
-     "https://localhost:8443/results?limit=100&offset=0"
+      "https://localhost:8443/results?limit=100&offset=0"
 ```
 
 Returns an array of `TaskResult` objects, most recent first. Without query
 params, returns up to `results_limit` results (from server config).
+
+Filter by customer_id:
+
+```sh
+curl --cacert certs/ca.crt \
+     --cert certs/client.crt \
+     --key certs/client.key \
+     "https://localhost:8443/results?customer_id=a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+```
 
 ## Security
 
@@ -185,7 +207,14 @@ params, returns up to `results_limit` results (from server config).
 - **mTLS enforced on AMQP broker**: both the central server and each agent
   present a client certificate when connecting to LavinMQ. The broker
   rejects any connection without a CA-signed cert. Each agent has its own
-  keypair (`certs/{agent_id}.crt`/`.key`) with `CN={agent_id}`.
+  keypair (`certs/{server_cloud_id}.crt`/`.key`) with `CN={server_cloud_id}`.
+- **Per-agent LavinMQ users**: each agent and the server authenticate to
+  LavinMQ with a unique username (matching the cert CN) and a unique random
+  password. This provides a second authentication factor alongside mTLS —
+  the certificate proves identity and the password adds a shared secret.
+  Permissions are restrictive: each agent can only access its own task queue
+  and the shared results queue. The default `guest` user is restricted to
+  loopback connections only.
 - **Client allowlist**: the server only accepts tasks from CNs listed in
   `allowed_clients`.
 - **Per-workload client restrictions**: each workload can optionally restrict
@@ -205,16 +234,18 @@ params, returns up to `results_limit` results (from server config).
 ### Agent (`config.agent.yml`)
 
 ```yaml
-agent_id: "server-01"
+server_cloud_id: "550e8400-e29b-41d4-a716-446655440000"
 
 amqp:
-  url: "amqps://agent:secretpass@localhost:5671"
+  url: "amqps://550e8400-e29b-41d4-a716-446655440000:<password>@localhost:5671"
+  # Username must match server_cloud_id (and cert CN). Password is generated by
+  # ./scripts/setup-lavinmq-users.sh
   task_queue: "tasks"
   result_queue: "results"
   poll_interval: 5
   ca: certs/ca.crt              # CA cert to verify the broker
-  cert: certs/agent-01.crt      # per-agent client cert (CN must match agent_id)
-  key: certs/agent-01.key       # per-agent private key
+  cert: certs/550e8400-e29b-41d4-a716-446655440000.crt      # per-agent client cert (CN must match server_cloud_id)
+  key: certs/550e8400-e29b-41d4-a716-446655440000.key       # per-agent private key
 
 limits:
   output_bytes: 1048576
@@ -267,7 +298,8 @@ tls:
   ca: certs/ca.crt
 
 amqp:
-  url: "amqps://server:secretpass@localhost:5671"
+  url: "amqps://amqp-server:<password>@localhost:5671"
+  # Password is generated by ./scripts/setup-lavinmq-users.sh
   task_queue: "tasks"
   result_queue: "results"
   ca: certs/ca.crt              # CA cert to verify the broker
@@ -308,23 +340,25 @@ src/
     middleware.cr         # Error handling, request size, audit log, rate limit
 spec/                     # Test suite (crystal spec)
 scripts/
-  dev-up.sh               # Generate certs, build, and start all Docker services
+  dev-up.sh               # Generate certs, create LavinMQ users, build, start all Docker services
   dev-down.sh             # Stop Docker containers
+  setup-lavinmq-users.sh  # Create per-agent LavinMQ users with unique passwords
   stress-test.sh          # Launch N agents and submit tasks, report throughput
 certs/
   generate.sh             # Generate CA, HTTP server/client, AMQP server, LavinMQ certs
-  generate-agent.sh       # Generate per-agent AMQP mTLS cert (CN=<agent_id>)
+  generate-agent.sh       # Generate per-agent AMQP mTLS cert (CN=<server_cloud_id>)
 ```
 
 ## Scripts
 
 | Script             | Description                                                        |
 |--------------------|--------------------------------------------------------------------|
-| `dev-up.sh`        | Generates dev certs, builds images, starts all services via Docker |
+| `dev-up.sh`        | Generates dev certs, creates LavinMQ users, builds images, starts all services via Docker |
 | `dev-down.sh`      | Stops Docker containers (pass `-v` to also remove data volumes)    |
+| `setup-lavinmq-users.sh` | Creates per-agent and server LavinMQ users with unique passwords and restrictive permissions. Usage: `./scripts/setup-lavinmq-users.sh [--agents-only] <server_cloud_id> [<server_cloud_id> ...]` |
 | `stress-test.sh`   | Launches N local agents (default 100), submits tasks, and reports throughput and success rate. Usage: `./scripts/stress-test.sh [num_agents] [tasks_per_agent]` |
 | `certs/generate.sh`        | Generates CA, HTTP server/client, AMQP server, and LavinMQ TLS certs |
-| `certs/generate-agent.sh`  | Generates a per-agent AMQP mTLS client cert. Usage: `./certs/generate-agent.sh <agent_id>` |
+| `certs/generate-agent.sh`  | Generates a per-agent AMQP mTLS client cert. Usage: `./certs/generate-agent.sh <server_cloud_id> [--create-user]` |
 
 ## systemd services
 

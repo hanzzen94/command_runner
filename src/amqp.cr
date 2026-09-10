@@ -16,7 +16,7 @@ module CommandRunner
     getter task_queue_prefix : String
     getter result_queue : String
 
-    def initialize(config : AmqpConfig, @agent_id : String? = nil)
+    def initialize(config : AmqpConfig, @server_cloud_id : String? = nil)
       @task_queue_prefix = config.task_queue
       @result_queue = config.result_queue
       @poll_interval = config.poll_interval.seconds
@@ -63,16 +63,16 @@ module CommandRunner
       @poll_interval
     end
 
-    def task_queue_for(agent_id : String) : String
-      "#{@task_queue_prefix}.#{agent_id}"
+    def task_queue_for(server_cloud_id : String) : String
+      "#{@task_queue_prefix}.#{server_cloud_id}"
     end
 
     private def declare_queues : Nil
       conn = connection
       conn.channel do |ch|
         ch.queue(@result_queue, durable: true)
-        if aid = @agent_id
-          q = task_queue_for(aid)
+        if scid = @server_cloud_id
+          q = task_queue_for(scid)
           ch.queue(q, durable: true)
           Log.info { "declared task queue: #{q}" }
         end
@@ -82,7 +82,7 @@ module CommandRunner
     def publish_task(task : Task) : Bool
       ch = connection.channel
       begin
-        q = task_queue_for(task.agent_id)
+        q = task_queue_for(task.server_cloud_id)
         ch.queue(q, durable: true)
         ch.basic_publish_confirm(task.to_json, exchange: "", routing_key: q,
           props: AMQP::Client::Properties.new(delivery_mode: 2_u8))
@@ -102,12 +102,12 @@ module CommandRunner
     end
 
     def process_task(&block : Task -> TaskResult?) : Nil
-      aid = @agent_id
-      raise Error.new("agent_id required for process_task") unless aid
+      scid = @server_cloud_id
+      raise Error.new("server_cloud_id required for process_task") unless scid
 
       ch = connection.channel
       begin
-        q = task_queue_for(aid)
+        q = task_queue_for(scid)
         msg = ch.basic_get(q, no_ack: false)
         return unless msg
 

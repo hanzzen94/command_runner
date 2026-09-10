@@ -27,7 +27,17 @@ if [ ! -f bin/command_runner ] || [ ! -f bin/central_server ]; then
 fi
 
 echo "==> Writing stress-test server config (rate_per_minute: 10000)..."
-cat > config.server.docker.yml <<'YAML'
+
+# Create a stress-test LavinMQ user with broad permissions
+STRESS_PASS=$(openssl rand -base64 32 | tr -d '\n/+=' | head -c 32)
+curl -sf -u guest:guest -X PUT http://localhost:15672/api/users/stress-test \
+  -H 'Content-Type: application/json' \
+  -d "{\"password\":\"${STRESS_PASS}\",\"tags\":\"\"}" >/dev/null
+curl -sf -u guest:guest -X PUT http://localhost:15672/api/permissions/%2F/stress-test \
+  -H 'Content-Type: application/json' \
+  -d '{"configure":".*","write":".*","read":".*"}' >/dev/null
+
+cat > config.server.docker.yml <<YAML
 listen: "0.0.0.0:8443"
 
 tls:
@@ -36,9 +46,12 @@ tls:
   ca: /app/certs/ca.crt
 
 amqp:
-  url: "amqp://guest:guest@lavinmq:5672"
+  url: "amqps://stress-test:${STRESS_PASS}@lavinmq:5671"
   task_queue: "tasks"
   result_queue: "results"
+  ca: /app/certs/ca.crt
+  cert: /app/certs/amqp-server.crt
+  key: /app/certs/amqp-server.key
 
 allowed_clients:
   - ci-bot
@@ -78,13 +91,16 @@ for i in $(seq 1 60); do
 done
 
 echo "==> Generating $NUM_AGENTS agent configs..."
+CUSTOMER_GUID=$(cat /proc/sys/kernel/random/uuid)
+SCID_ARRAY=()
 for i in $(seq 1 "$NUM_AGENTS"); do
-  agent_name=$(printf "stress-agent-%03d" "$i")
-  cat > "$TMP_DIR/$agent_name.yml" <<YAML
-agent_id: "$agent_name"
+  scid=$(cat /proc/sys/kernel/random/uuid)
+  SCID_ARRAY+=("$scid")
+  cat > "$TMP_DIR/$scid.yml" <<YAML
+server_cloud_id: "$scid"
 
 amqp:
-  url: "amqp://guest:guest@localhost:5672"
+  url: "amqp://stress-test:${STRESS_PASS}@localhost:5672"
   task_queue: "tasks"
   result_queue: "results"
   poll_interval: $AGENT_POLL_INTERVAL
@@ -105,9 +121,9 @@ YAML
 done
 
 echo "==> Launching $NUM_AGENTS agents..."
-for i in $(seq 1 "$NUM_AGENTS"); do
-  agent_name=$(printf "stress-agent-%03d" "$i")
-  ./bin/command_runner --config "$TMP_DIR/$agent_name.yml" > "$TMP_DIR/$agent_name.log" 2>&1 &
+for i in $(seq 0 $((NUM_AGENTS - 1))); do
+  scid="${SCID_ARRAY[$i]}"
+  ./bin/command_runner --config "$TMP_DIR/$scid.yml" > "$TMP_DIR/$scid.log" 2>&1 &
   PIDS+=($!)
 done
 
@@ -133,14 +149,14 @@ SUBMIT_START=$(date +%s%N)
 
 SUBMITTED=0
 FAILED=0
-for i in $(seq 1 "$NUM_AGENTS"); do
-  agent_name=$(printf "stress-agent-%03d" "$i")
+for i in $(seq 0 $((NUM_AGENTS - 1))); do
+  scid="${SCID_ARRAY[$i]}"
   for j in $(seq 1 "$TASKS_PER_AGENT"); do
     code=$(curl --cacert certs/ca.crt --cert certs/client.crt --key certs/client.key \
       -s -o /dev/null -w '%{http_code}' \
       -X POST https://localhost:8443/tasks \
       -H 'Content-Type: application/json' \
-      -d "{\"agent_id\":\"$agent_name\",\"workload\":\"echo\",\"params\":{\"message\":\"task-$j\"}}")
+      -d "{\"server_cloud_id\":\"$scid\",\"customer_id\":\"$CUSTOMER_GUID\",\"workload\":\"echo\",\"params\":{\"message\":\"task-$j\"}}")
     if [ "$code" = "201" ]; then
       SUBMITTED=$((SUBMITTED + 1))
     else
@@ -211,6 +227,6 @@ if [ "$SUBMITTED" -gt 0 ]; then
 fi
 echo "============================================"
 echo ""
-echo "  Agent logs:       $TMP_DIR/"
-echo "  LavinMQ queues:   http://localhost:15672 (guest/guest)"
-echo "  Stop everything:  ./scripts/dev-down.sh"
+  echo "  Agent logs:       $TMP_DIR/"
+  echo "  LavinMQ queues:   http://localhost:15672 (guest/guest, loopback only)"
+  echo "  Stop everything:  ./scripts/dev-down.sh"

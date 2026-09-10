@@ -4,7 +4,7 @@ include CommandRunner
 describe CommandRunner::AgentConfig do
   it "parses a full agent config" do
     yaml = <<-YAML
-    agent_id: "server-01"
+    server_cloud_id: "550e8400-e29b-41d4-a716-446655440000"
     amqp:
       url: "amqp://agent:pass@localhost:5672"
       task_queue: "tasks"
@@ -27,7 +27,7 @@ describe CommandRunner::AgentConfig do
     YAML
 
     config = AgentConfig.from_yaml(yaml)
-    config.agent_id.should eq("server-01")
+    config.server_cloud_id.should eq("550e8400-e29b-41d4-a716-446655440000")
     config.amqp.url.should eq("amqp://agent:pass@localhost:5672")
     config.amqp.task_queue.should eq("tasks")
     config.amqp.result_queue.should eq("results")
@@ -55,7 +55,7 @@ describe CommandRunner::AgentConfig do
 
   it "applies defaults for missing fields" do
     yaml = <<-YAML
-    agent_id: "node-1"
+    server_cloud_id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
     amqp:
       url: "amqp://localhost"
     workloads:
@@ -64,6 +64,7 @@ describe CommandRunner::AgentConfig do
     YAML
 
     config = AgentConfig.from_yaml(yaml)
+    config.server_cloud_id.should eq("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
     config.amqp.task_queue.should eq("tasks")
     config.amqp.result_queue.should eq("results")
     config.amqp.poll_interval.should eq(5)

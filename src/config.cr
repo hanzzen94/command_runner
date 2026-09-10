@@ -69,7 +69,7 @@ module CommandRunner
   struct AgentConfig
     include YAML::Serializable
 
-    getter agent_id : String
+    getter server_cloud_id : String
     getter amqp : AmqpConfig
     getter limits : Limits = Limits.new
     getter workloads : Array(WorkloadConfig)

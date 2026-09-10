@@ -22,40 +22,42 @@ module CommandRunner
     def migrate : Nil
       @db.exec <<-SQL
         CREATE TABLE IF NOT EXISTS tasks (
-          task_id      TEXT PRIMARY KEY,
-          agent_id     TEXT NOT NULL,
-          workload     TEXT NOT NULL,
-          params       JSONB NOT NULL DEFAULT '{}',
-          submitted_at TIMESTAMPTZ NOT NULL,
-          submitted_by TEXT NOT NULL DEFAULT '',
-          status       TEXT NOT NULL DEFAULT 'queued'
+          task_id           TEXT PRIMARY KEY,
+          server_cloud_id   TEXT NOT NULL,
+          customer_id       TEXT NOT NULL,
+          workload          TEXT NOT NULL,
+          params            JSONB NOT NULL DEFAULT '{}',
+          submitted_at      TIMESTAMPTZ NOT NULL,
+          submitted_by      TEXT NOT NULL DEFAULT '',
+          status            TEXT NOT NULL DEFAULT 'queued'
         )
       SQL
-
-      @db.exec "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS agent_id TEXT NOT NULL DEFAULT ''"
 
       @db.exec <<-SQL
         CREATE TABLE IF NOT EXISTS task_results (
-          task_id      TEXT PRIMARY KEY REFERENCES tasks(task_id) ON DELETE CASCADE,
-          agent_id     TEXT NOT NULL,
-          exit_code    INTEGER NOT NULL,
-          stdout       TEXT NOT NULL DEFAULT '',
-          stderr       TEXT NOT NULL DEFAULT '',
-          truncated    BOOLEAN NOT NULL DEFAULT false,
-          timed_out    BOOLEAN NOT NULL DEFAULT false,
-          duration_us  BIGINT NOT NULL,
-          executed_at  TEXT NOT NULL,
-          error        TEXT
+          task_id           TEXT PRIMARY KEY REFERENCES tasks(task_id) ON DELETE CASCADE,
+          server_cloud_id   TEXT NOT NULL,
+          customer_id       TEXT NOT NULL,
+          exit_code         INTEGER NOT NULL,
+          stdout            TEXT NOT NULL DEFAULT '',
+          stderr            TEXT NOT NULL DEFAULT '',
+          truncated         BOOLEAN NOT NULL DEFAULT false,
+          timed_out         BOOLEAN NOT NULL DEFAULT false,
+          duration_us       BIGINT NOT NULL,
+          executed_at       TEXT NOT NULL,
+          error             TEXT
         )
       SQL
 
+      @db.exec "CREATE INDEX IF NOT EXISTS idx_tasks_customer_id ON tasks(customer_id)"
+      @db.exec "CREATE INDEX IF NOT EXISTS idx_task_results_customer_id ON task_results(customer_id)"
       @db.exec "CREATE INDEX IF NOT EXISTS idx_task_results_executed_at ON task_results(executed_at DESC)"
     end
 
     def store_task(task : Task) : Nil
       @db.exec(
-        "INSERT INTO tasks (task_id, agent_id, workload, params, submitted_at, submitted_by) VALUES ($1, $2, $3, $4, $5, $6)",
-        task.task_id, task.agent_id, task.workload, task.params.to_json, task.submitted_at, task.submitted_by
+        "INSERT INTO tasks (task_id, server_cloud_id, customer_id, workload, params, submitted_at, submitted_by) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        task.task_id, task.server_cloud_id, task.customer_id, task.workload, task.params.to_json, task.submitted_at, task.submitted_by
       )
     end
 
@@ -63,10 +65,11 @@ module CommandRunner
       @db.transaction do |tx|
         tx.connection.exec(
           <<-SQL,
-          INSERT INTO task_results (task_id, agent_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          INSERT INTO task_results (task_id, server_cloud_id, customer_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           ON CONFLICT (task_id) DO UPDATE SET
-            agent_id = EXCLUDED.agent_id,
+            server_cloud_id = EXCLUDED.server_cloud_id,
+            customer_id = EXCLUDED.customer_id,
             exit_code = EXCLUDED.exit_code,
             stdout = EXCLUDED.stdout,
             stderr = EXCLUDED.stderr,
@@ -76,7 +79,7 @@ module CommandRunner
             executed_at = EXCLUDED.executed_at,
             error = EXCLUDED.error
           SQL
-          result.task_id, result.agent_id, result.exit_code, result.stdout,
+          result.task_id, result.server_cloud_id, result.customer_id, result.exit_code, result.stdout,
           result.stderr, result.truncated, result.timed_out, result.duration_us,
           result.executed_at, result.error
         )
@@ -89,12 +92,13 @@ module CommandRunner
 
     def get_result(task_id : String) : TaskResult?
       @db.query_one?(
-        "SELECT task_id, agent_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error FROM task_results WHERE task_id = $1",
+        "SELECT task_id, server_cloud_id, customer_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error FROM task_results WHERE task_id = $1",
         task_id
       ) do |rs|
         TaskResult.new(
           task_id: rs.read(String),
-          agent_id: rs.read(String),
+          server_cloud_id: rs.read(String),
+          customer_id: rs.read(String),
           exit_code: rs.read(Int32),
           stdout: rs.read(String),
           stderr: rs.read(String),
@@ -107,27 +111,51 @@ module CommandRunner
       end
     end
 
-    def list_results(limit : Int32? = nil, offset : Int32 = 0) : Array(TaskResult)
+    def list_results(limit : Int32? = nil, offset : Int32 = 0, customer_id : String? = nil) : Array(TaskResult)
       lim = limit || @results_limit
       results = [] of TaskResult
 
-      @db.query(
-        "SELECT task_id, agent_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error FROM task_results ORDER BY executed_at DESC LIMIT $1 OFFSET $2",
-        lim, offset
-      ) do |rs|
-        rs.each do
-          results << TaskResult.new(
-            task_id: rs.read(String),
-            agent_id: rs.read(String),
-            exit_code: rs.read(Int32),
-            stdout: rs.read(String),
-            stderr: rs.read(String),
-            truncated: rs.read(Bool),
-            timed_out: rs.read(Bool),
-            duration_us: rs.read(Int64),
-            executed_at: rs.read(String),
-            error: rs.read(String?),
-          )
+      if customer_id
+        @db.query(
+          "SELECT task_id, server_cloud_id, customer_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error FROM task_results WHERE customer_id = $1 ORDER BY executed_at DESC LIMIT $2 OFFSET $3",
+          customer_id, lim, offset
+        ) do |rs|
+          rs.each do
+            results << TaskResult.new(
+              task_id: rs.read(String),
+              server_cloud_id: rs.read(String),
+              customer_id: rs.read(String),
+              exit_code: rs.read(Int32),
+              stdout: rs.read(String),
+              stderr: rs.read(String),
+              truncated: rs.read(Bool),
+              timed_out: rs.read(Bool),
+              duration_us: rs.read(Int64),
+              executed_at: rs.read(String),
+              error: rs.read(String?),
+            )
+          end
+        end
+      else
+        @db.query(
+          "SELECT task_id, server_cloud_id, customer_id, exit_code, stdout, stderr, truncated, timed_out, duration_us, executed_at, error FROM task_results ORDER BY executed_at DESC LIMIT $1 OFFSET $2",
+          lim, offset
+        ) do |rs|
+          rs.each do
+            results << TaskResult.new(
+              task_id: rs.read(String),
+              server_cloud_id: rs.read(String),
+              customer_id: rs.read(String),
+              exit_code: rs.read(Int32),
+              stdout: rs.read(String),
+              stderr: rs.read(String),
+              truncated: rs.read(Bool),
+              timed_out: rs.read(Bool),
+              duration_us: rs.read(Int64),
+              executed_at: rs.read(String),
+              error: rs.read(String?),
+            )
+          end
         end
       end
 
@@ -216,7 +244,7 @@ module CommandRunner
         begin
           @amqp.consume_results do |result|
             @db.store_result(result)
-            Log.info { "result stored: task=#{result.task_id} agent=#{result.agent_id} exit_code=#{result.exit_code}" }
+            Log.info { "result stored: task=#{result.task_id} server_cloud_id=#{result.server_cloud_id} exit_code=#{result.exit_code}" }
           end
         rescue ex : Exception
           Log.error { "results consumer error: #{ex.class}: #{ex.message}" }
